@@ -1,0 +1,40 @@
+[project]
+name = "hairify"
+version = "0.1.0"
+description = "A novelty filter that drops procedural hairs onto images, PDFs, and pptx files."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Hairify" }]
+
+dependencies = [
+  "fastapi>=0.115,<1.0",
+  "uvicorn[standard]>=0.30,<1.0",
+  "python-multipart>=0.0.9,<1.0",
+  "slowapi>=0.1.9,<1.0",
+  "Pillow>=10.4,<12.0",
+  "PyMuPDF>=1.24,<2.0",
+  "python-pptx>=1.0,<2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0,<9.0",
+  "reportlab>=4.2,<5.0",   # used by tests to generate a fixture PDF
+  "httpx>=0.27,<1.0",       # FastAPI TestClient transport
+]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["app"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+app = ["static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

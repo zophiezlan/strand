@@ -76,7 +76,7 @@ def _inject_file(path: Path, opts, preserve_mtime: bool) -> None:
     """Strand a single file in place. May raise; caller handles backup/restore."""
     stat = path.stat() if preserve_mtime else None
     data = path.read_bytes()
-    out = strand_bytes(data, path.name, opts)
+    out, _stats = strand_bytes(data, path.name, opts)
     path.write_bytes(out)
     if stat is not None:
         os.utime(path, (stat.st_atime, stat.st_mtime))

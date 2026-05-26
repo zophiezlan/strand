@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Strand — put a hair on it</title>
+  <title>Strand - put a hair on it</title>
   <meta name="description" content="A novelty filter that puts a hair on your images, PDFs, and slide decks. In-memory only — your files aren't stored or logged." />
 
   <!-- Favicon: inline SVG of a single strand. -->
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M 4 36 C 18 12, 32 56, 60 24' stroke='%231a1a1a' stroke-width='3' fill='none' stroke-linecap='round'/></svg>" />
 
   <!-- Open Graph / Twitter -->
-  <meta property="og:title" content="Strand — put a hair on it" />
+  <meta property="og:title" content="Strand - put a hair on it" />
   <meta property="og:description" content="A novelty filter that puts a hair on your images, PDFs, and slide decks." />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary" />
@@ -89,6 +89,10 @@
         <img id="preview-img" alt="Hairified preview" />
       </div>
       <button type="button" id="download" class="download" disabled>Download</button>
+      <details id="stats" class="stats" hidden>
+        <summary>Stats</summary>
+        <p id="stats-line"></p>
+      </details>
     </section>
 
     <footer>
@@ -98,6 +102,13 @@
       </p>
     </footer>
   </main>
+
+  <!-- Fullscreen image viewer. Clicking the result preview opens this. -->
+  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Full preview">
+    <img id="lightbox-img" alt="" draggable="false" />
+    <button type="button" id="lightbox-close" class="lightbox-close" aria-label="Close">×</button>
+    <div class="lightbox-hint">Scroll to zoom · drag to pan · double-click to reset · <kbd>Esc</kbd> closes</div>
+  </div>
 
   <script src="app.js" defer></script>
 </body>

@@ -227,6 +227,31 @@ MORPHOLOGIES: dict[str, "callable"] = {
 }
 
 
+def generate_hair_with_morphology(
+    rng: random.Random,
+    palette: str = "dark",
+    loop_chance: float = 0.15,
+    eyelash_chance: float = 0.08,
+    fragment_chance: float = 0.08,
+) -> tuple[Image.Image, str]:
+    """Pick a morphology by weighted random choice; return (image, name).
+
+    Callers that want stats use this; callers that just want the image use
+    `generate_hair`.
+    """
+    r = rng.random()
+    cum = loop_chance
+    if r < cum:
+        return _generate_loop_hair(rng, palette=palette), "loop"
+    cum += eyelash_chance
+    if r < cum:
+        return _generate_eyelash_hair(rng, palette=palette), "eyelash"
+    cum += fragment_chance
+    if r < cum:
+        return _generate_fragment_hair(rng, palette=palette), "fragment"
+    return _generate_curve_hair(rng, palette=palette), "curve"
+
+
 def generate_hair(
     rng: random.Random,
     palette: str = "dark",
@@ -235,17 +260,29 @@ def generate_hair(
     fragment_chance: float = 0.08,
 ) -> Image.Image:
     """Pick a morphology by weighted random choice; default is the curved strand."""
-    r = rng.random()
-    cum = loop_chance
-    if r < cum:
-        return _generate_loop_hair(rng, palette=palette)
-    cum += eyelash_chance
-    if r < cum:
-        return _generate_eyelash_hair(rng, palette=palette)
-    cum += fragment_chance
-    if r < cum:
-        return _generate_fragment_hair(rng, palette=palette)
-    return _generate_curve_hair(rng, palette=palette)
+    img, _ = generate_hair_with_morphology(
+        rng, palette=palette,
+        loop_chance=loop_chance, eyelash_chance=eyelash_chance,
+        fragment_chance=fragment_chance,
+    )
+    return img
+
+
+def _empty_stats() -> dict:
+    """Fresh stats dict — total hair count, morphology breakdown, pages touched."""
+    return {
+        "hairs": 0,
+        "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0},
+        "pages_touched": 0,
+    }
+
+
+def _merge_stats(into: dict, src: dict) -> None:
+    """Aggregate `src` stats into `into` in place. Used by the zip handler."""
+    into["hairs"] += src.get("hairs", 0)
+    into["pages_touched"] += src.get("pages_touched", 0)
+    for m, n in src.get("morphologies", {}).items():
+        into["morphologies"][m] = into["morphologies"].get(m, 0) + n
 
 
 def _rotate_hair(hair: Image.Image, rng: random.Random) -> Image.Image:
@@ -460,13 +497,15 @@ def options_from_ui(palette: str, intensity: str, seed: int | None = None) -> In
     return InjectOptions(**kwargs)
 
 
-def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> bytes:
-    """Overlay hairs onto an image and return the encoded bytes."""
+def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> tuple[bytes, dict]:
+    """Overlay hairs onto an image. Returns (encoded bytes, stats dict)."""
     suffix = suffix.lower()
     if suffix not in IMAGE_SUFFIXES:
         raise ValueError(f"unsupported image suffix: {suffix}")
 
     rng = opts.rng()
+    stats = _empty_stats()
+    stats["pages_touched"] = 1
     with Image.open(io.BytesIO(data)) as src:
         img = src.convert("RGBA")
 
@@ -474,7 +513,10 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> bytes:
     regions = _image_content_regions(img)
 
     for _ in range(max(1, opts.image_count)):
-        hair = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
+        hair, morph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+        hair = _rotate_hair(hair, rng)
+        stats["hairs"] += 1
+        stats["morphologies"][morph] += 1
         hw, hh = hair.size
         x, y, dw, dh = _place(rng, iw, ih, hw, hh, opts.scale_range,
                               regions=regions, content_bias=opts.content_bias)
@@ -482,7 +524,10 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> bytes:
         img.alpha_composite(hair_sized, (int(x), int(y)))
 
         for bx, by in _buddy_offsets(rng, dw, dh, iw, ih, x, y, opts.cluster_chance):
-            buddy = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
+            buddy, bmorph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+            buddy = _rotate_hair(buddy, rng)
+            stats["hairs"] += 1
+            stats["morphologies"][bmorph] += 1
             scale = rng.uniform(0.7, 1.0)
             bw, bh = max(1, int(dw * scale)), max(1, int(dh * scale))
             buddy = buddy.resize((bw, bh), Image.LANCZOS)
@@ -499,20 +544,21 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> bytes:
         img.save(out, format="WEBP", quality=92)
     else:
         img.save(out, format="PNG")
-    return out.getvalue()
+    return out.getvalue(), stats
 
 
-def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> bytes:
-    """Overlay hairs onto a PDF and return the rewritten bytes."""
+def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
+    """Overlay hairs onto a PDF. Returns (rewritten bytes, stats dict)."""
     import fitz  # PyMuPDF
 
     rng = opts.rng()
+    stats = _empty_stats()
     doc = fitz.open(stream=data, filetype="pdf")
 
     try:
         page_count = doc.page_count
         if page_count == 0:
-            return data
+            return data, stats
 
         # Pick which pages get hair. Per-page Bernoulli with at-least-one guarantee
         # so a 2-page doc on subtle still gets visibly haired.
@@ -524,12 +570,16 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> bytes:
         for i, do_it in enumerate(hit):
             if not do_it:
                 continue
+            stats["pages_touched"] += 1
             page = doc[i]
             regions = _pdf_content_regions(page)
             pw = page.rect.width
             ph = page.rect.height
             for _ in range(per_page):
-                hair = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
+                hair, morph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+                hair = _rotate_hair(hair, rng)
+                stats["hairs"] += 1
+                stats["morphologies"][morph] += 1
                 hw, hh = hair.size
                 x, y, dw, dh = _place(rng, pw, ph, hw, hh, opts.scale_range,
                                       regions=regions, content_bias=opts.content_bias)
@@ -545,7 +595,10 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> bytes:
                 )
 
                 for bx, by in _buddy_offsets(rng, dw, dh, pw, ph, x, y, opts.cluster_chance):
-                    buddy = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
+                    buddy, bmorph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+                    buddy = _rotate_hair(buddy, rng)
+                    stats["hairs"] += 1
+                    stats["morphologies"][bmorph] += 1
                     bs = rng.uniform(0.7, 1.0)
                     bw_, bh_ = dw * bs, dh * bs
                     bbuf = io.BytesIO()
@@ -557,16 +610,17 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> bytes:
                         overlay=True,
                     )
 
-        return doc.tobytes(garbage=4, deflate=True)
+        return doc.tobytes(garbage=4, deflate=True), stats
     finally:
         doc.close()
 
 
-def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> bytes:
-    """Overlay hairs onto a pptx and return the rewritten bytes."""
+def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
+    """Overlay hairs onto a pptx. Returns (rewritten bytes, stats dict)."""
     from pptx import Presentation
 
     rng = opts.rng()
+    stats = _empty_stats()
     prs = Presentation(io.BytesIO(data))
     sw, sh = prs.slide_width, prs.slide_height  # EMUs
 
@@ -574,7 +628,7 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> bytes:
     if not slides:
         out = io.BytesIO()
         prs.save(out)
-        return out.getvalue()
+        return out.getvalue(), stats
 
     hit = [rng.random() < opts.rate for _ in slides]
     if not any(hit):
@@ -584,9 +638,13 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> bytes:
     for slide, do_it in zip(slides, hit):
         if not do_it:
             continue
+        stats["pages_touched"] += 1
         regions = _pptx_content_regions(slide)
         for _ in range(per_slide):
-            hair = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
+            hair, morph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+            hair = _rotate_hair(hair, rng)
+            stats["hairs"] += 1
+            stats["morphologies"][morph] += 1
             hw, hh = hair.size
             x, y, dw, dh = _place(rng, sw, sh, hw, hh, opts.scale_range,
                                   regions=regions, content_bias=opts.content_bias)
@@ -597,7 +655,10 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> bytes:
             slide.shapes.add_picture(buf, int(x), int(y), width=int(dw), height=int(dh))
 
             for bx, by in _buddy_offsets(rng, dw, dh, sw, sh, x, y, opts.cluster_chance):
-                buddy = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
+                buddy, bmorph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+                buddy = _rotate_hair(buddy, rng)
+                stats["hairs"] += 1
+                stats["morphologies"][bmorph] += 1
                 bs = rng.uniform(0.7, 1.0)
                 bbuf = io.BytesIO()
                 buddy.save(bbuf, format="PNG")
@@ -609,15 +670,19 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> bytes:
 
     out = io.BytesIO()
     prs.save(out)
-    return out.getvalue()
+    return out.getvalue(), stats
 
 
 def _suffix_of(name: str) -> str:
     return ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
 
 
-def strand_bytes(data: bytes, filename: str, opts: InjectOptions) -> bytes:
-    """Dispatch to the right injector based on filename suffix."""
+def strand_bytes(data: bytes, filename: str, opts: InjectOptions) -> tuple[bytes, dict]:
+    """Dispatch to the right injector based on filename suffix.
+
+    Returns (rewritten bytes, stats dict). Stats include total hair count,
+    a per-morphology breakdown, and pages touched.
+    """
     suffix = _suffix_of(filename)
     if suffix in IMAGE_SUFFIXES:
         return inject_image_bytes(data, suffix, opts)
@@ -659,6 +724,7 @@ def strand_zip_bytes(
         "skipped_count": 0,
         "error_count": 0,
         "seed": base_seed,
+        "stats": _empty_stats(),
     }
 
     out_buf = io.BytesIO()
@@ -714,7 +780,7 @@ def strand_zip_bytes(
 
             try:
                 raw = zin.read(info)
-                processed = strand_bytes(raw, name, entry_opts)
+                processed, entry_stats = strand_bytes(raw, name, entry_opts)
             except Exception as exc:
                 report["error_count"] += 1
                 report["entries"].append({
@@ -723,6 +789,7 @@ def strand_zip_bytes(
                 })
                 continue
 
+            _merge_stats(report["stats"], entry_stats)
             out_name = _apply_suffix(name, name_suffix)
             zout.writestr(out_name, processed)
             report["haired_count"] += 1

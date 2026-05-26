@@ -81,7 +81,7 @@ def pptx_bytes() -> bytes:
 
 def test_inject_png_roundtrip(png_bytes):
     opts = InjectOptions(seed=1, image_count=2)
-    out = inject_image_bytes(png_bytes, ".png", opts)
+    out, _ = inject_image_bytes(png_bytes, ".png", opts)
     assert isinstance(out, bytes)
     assert len(out) > 0
     assert out != png_bytes
@@ -94,7 +94,7 @@ def test_inject_png_roundtrip(png_bytes):
 
 def test_inject_jpeg_roundtrip(jpeg_bytes):
     opts = InjectOptions(seed=2, image_count=1)
-    out = inject_image_bytes(jpeg_bytes, ".jpg", opts)
+    out, _ = inject_image_bytes(jpeg_bytes, ".jpg", opts)
     with Image.open(io.BytesIO(out)) as im:
         im.load()
         assert im.size == (320, 240)
@@ -105,7 +105,7 @@ def test_inject_pdf_roundtrip(pdf_bytes):
     import fitz
 
     opts = InjectOptions(seed=3, rate=0.85)
-    out = inject_pdf_bytes(pdf_bytes, opts)
+    out, _ = inject_pdf_bytes(pdf_bytes, opts)
     assert len(out) > 0
     assert out != pdf_bytes
 
@@ -121,7 +121,7 @@ def test_inject_pdf_subtle_still_hits_at_least_one_page(pdf_bytes):
     import fitz
 
     opts = InjectOptions(seed=12345, rate=0.25)
-    out = inject_pdf_bytes(pdf_bytes, opts)
+    out, _ = inject_pdf_bytes(pdf_bytes, opts)
     # An untouched PDF round-tripped through PyMuPDF still differs from the
     # reportlab output, so size-difference isn't a useful signal here. Instead,
     # check that at least one page has embedded images.
@@ -137,7 +137,7 @@ def test_inject_pptx_roundtrip(pptx_bytes):
     from pptx import Presentation
 
     opts = InjectOptions(seed=4, rate=0.85)
-    out = inject_pptx_bytes(pptx_bytes, opts)
+    out, _ = inject_pptx_bytes(pptx_bytes, opts)
     assert len(out) > 0
     assert out != pptx_bytes
 
@@ -147,8 +147,8 @@ def test_inject_pptx_roundtrip(pptx_bytes):
 
 def test_strand_bytes_dispatches_by_suffix(png_bytes, pdf_bytes):
     opts = InjectOptions(seed=5)
-    assert strand_bytes(png_bytes, "photo.png", opts) != png_bytes
-    assert strand_bytes(pdf_bytes, "deck.pdf", opts) != pdf_bytes
+    assert strand_bytes(png_bytes, "photo.png", opts)[0] != png_bytes
+    assert strand_bytes(pdf_bytes, "deck.pdf", opts)[0] != pdf_bytes
 
 
 def test_strand_bytes_rejects_unsupported():
@@ -157,9 +157,59 @@ def test_strand_bytes_rejects_unsupported():
 
 
 def test_seed_is_deterministic(png_bytes):
-    a = inject_image_bytes(png_bytes, ".png", InjectOptions(seed=42, image_count=2))
-    b = inject_image_bytes(png_bytes, ".png", InjectOptions(seed=42, image_count=2))
+    a, _ = inject_image_bytes(png_bytes, ".png", InjectOptions(seed=42, image_count=2))
+    b, _ = inject_image_bytes(png_bytes, ".png", InjectOptions(seed=42, image_count=2))
     assert a == b
+
+
+# --- Stats ------------------------------------------------------------------
+
+def test_image_injector_returns_stats(png_bytes):
+    """Stats track hair count, per-morphology breakdown, and pages touched."""
+    opts = InjectOptions(seed=1, image_count=3, cluster_chance=0.0)
+    _, stats = inject_image_bytes(png_bytes, ".png", opts)
+    assert stats["hairs"] == 3
+    assert stats["pages_touched"] == 1
+    morph_sum = sum(stats["morphologies"].values())
+    assert morph_sum == 3
+    assert set(stats["morphologies"].keys()) == {"curve", "loop", "eyelash", "fragment"}
+
+
+def test_pdf_injector_stats_track_pages(pdf_bytes):
+    opts = InjectOptions(seed=2, rate=1.0, hairs_per_page=2, cluster_chance=0.0)
+    _, stats = inject_pdf_bytes(pdf_bytes, opts)
+    # Every page hit, 2 hairs per page, 3 pages → 6.
+    assert stats["pages_touched"] == 3
+    assert stats["hairs"] == 6
+
+
+def test_stats_header_present_in_response(client, png_bytes):
+    r = client.post(
+        "/strand",
+        files={"file": ("photo.png", png_bytes, "image/png")},
+        data={"palette": "dark", "intensity": "normal"},
+    )
+    assert r.status_code == 200
+    raw = r.headers.get("X-Strand-Stats")
+    assert raw, "X-Strand-Stats header missing"
+    import json
+    stats = json.loads(raw)
+    assert stats["hairs"] >= 1
+    assert "morphologies" in stats
+    assert stats["pages_touched"] >= 1
+
+
+def test_zip_response_stats_aggregate_across_entries(client, zip_bytes):
+    r = client.post(
+        "/strand",
+        files={"file": ("bundle.zip", zip_bytes, "application/zip")},
+        data={"palette": "dark", "intensity": "normal"},
+    )
+    assert r.status_code == 200
+    import json
+    stats = json.loads(r.headers["X-Strand-Stats"])
+    # 3 supported entries each get at least one hair.
+    assert stats["hairs"] >= 3
 
 
 # --- HTTP layer ------------------------------------------------------------
@@ -234,7 +284,7 @@ def test_intensity_table_is_monotonic_in_density():
 @pytest.mark.parametrize("intensity", list(INTENSITY_TIERS.keys()))
 def test_every_intensity_tier_runs(png_bytes, intensity):
     opts = options_from_ui(palette="dark", intensity=intensity, seed=7)
-    out = inject_image_bytes(png_bytes, ".png", opts)
+    out, _ = inject_image_bytes(png_bytes, ".png", opts)
     assert len(out) > 0
     with Image.open(io.BytesIO(out)) as im:
         im.load()
@@ -247,7 +297,7 @@ def test_higher_density_embeds_more_images_in_pdf(pdf_bytes):
 
     def total_images(intensity):
         opts = options_from_ui(palette="dark", intensity=intensity, seed=1234)
-        out = inject_pdf_bytes(pdf_bytes, opts)
+        out, _ = inject_pdf_bytes(pdf_bytes, opts)
         doc = fitz.open(stream=out, filetype="pdf")
         try:
             return sum(len(doc[i].get_images()) for i in range(doc.page_count))
@@ -561,7 +611,7 @@ def test_clusters_can_increase_hair_count(pdf_bytes):
         opts = options_from_ui(palette="dark", intensity="normal", seed=2024)
         # options_from_ui doesn't take cluster_chance; mutate after construction.
         opts.cluster_chance = cluster_chance
-        out = inject_pdf_bytes(pdf_bytes, opts)
+        out, _ = inject_pdf_bytes(pdf_bytes, opts)
         doc = fitz.open(stream=out, filetype="pdf")
         try:
             return sum(len(doc[i].get_images()) for i in range(doc.page_count))

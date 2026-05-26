@@ -13,6 +13,8 @@
   const rerollNewBtn = document.getElementById("reroll-new");
   const downloadBtn = document.getElementById("download");
   const zipSummaryEl = document.getElementById("zip-summary");
+  const statsEl = document.getElementById("stats");
+  const statsLineEl = document.getElementById("stats-line");
   const suffixInput = document.getElementById("suffix");
 
   const IMAGE_SUFFIXES = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]);
@@ -171,6 +173,7 @@
     downloadBtn.disabled = true;
     previewEl.hidden = true;
     zipSummaryEl.hidden = true;
+    statsEl.hidden = true;
     // Discard any prior result + preview URL before starting fresh.
     if (lastPreviewUrl) {
       URL.revokeObjectURL(lastPreviewUrl);
@@ -223,6 +226,10 @@
       const errored = res.headers.get("X-Strand-Errored");
       const isZipResponse = haired != null || skipped != null;
 
+      // Stats panel — hidden by default, opens on click for nerds who want
+      // to know which morphologies got drawn and across how many pages.
+      renderStats(res.headers.get("X-Strand-Stats"));
+
       const blob = await res.blob();
       const singleFile = currentFiles[0];
       const downloadName = downloadNameFrom(res, singleFile.name);
@@ -272,6 +279,34 @@
       triggerDownload(lastResultBlob, lastResultName);
     }
   });
+
+  function renderStats(headerValue) {
+    if (!headerValue) { statsEl.hidden = true; return; }
+    let s;
+    try { s = JSON.parse(headerValue); } catch { statsEl.hidden = true; return; }
+
+    const total = s.hairs || 0;
+    if (total === 0) { statsEl.hidden = true; return; }
+
+    const morphs = s.morphologies || {};
+    // Order morphologies by count desc so the dominant one reads first.
+    const named = Object.entries(morphs)
+      .filter(([, n]) => n > 0)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, n]) => `${n} ${pluralize(name, n)}`);
+    const morphStr = named.length ? ` (${named.join(", ")})` : "";
+
+    const pages = s.pages_touched || 0;
+    const pagesStr = pages > 1 ? ` across ${pages} pages` : "";
+
+    statsLineEl.textContent = `${total} ${pluralize("hair", total)}${morphStr}${pagesStr}.`;
+    statsEl.hidden = false;
+  }
+
+  function pluralize(word, n) {
+    if (n === 1) return word;
+    return word + "s";
+  }
 
   function downloadNameFrom(res, fallback) {
     const cd = res.headers.get("Content-Disposition") || "";
@@ -335,6 +370,125 @@
     if (e.key === "Enter" && !goBtn.disabled) { goBtn.click(); }
     else if (e.key.toLowerCase() === "r" && !rerollNewBtn.disabled) { rerollNewBtn.click(); }
     else if (e.key.toLowerCase() === "s" && !rerollSameBtn.disabled) { rerollSameBtn.click(); }
+  });
+
+  // --- Lightbox (click preview to zoom) -----------------------------------
+  const lightbox = document.getElementById("lightbox");
+  const lightboxImg = document.getElementById("lightbox-img");
+  const lightboxClose = document.getElementById("lightbox-close");
+
+  const lb = { scale: 1, tx: 0, ty: 0, dragging: false, sx: 0, sy: 0 };
+
+  function applyLightboxTransform() {
+    lightboxImg.style.transform =
+      `translate(${lb.tx}px, ${lb.ty}px) scale(${lb.scale})`;
+  }
+
+  function resetLightbox() {
+    lb.scale = 1; lb.tx = 0; lb.ty = 0;
+    applyLightboxTransform();
+  }
+
+  function openLightbox(srcUrl) {
+    if (!srcUrl) return;
+    lightboxImg.src = srcUrl;
+    resetLightbox();
+    lightbox.hidden = false;
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeLightbox() {
+    lightbox.hidden = true;
+    document.body.style.overflow = "";
+    lightboxImg.src = "";
+  }
+
+  // Click the preview thumbnail to open at full size.
+  previewImg.addEventListener("click", () => {
+    if (lastPreviewUrl) openLightbox(lastPreviewUrl);
+  });
+
+  // Wheel to zoom — anchored toward the cursor for natural zoom-in feel.
+  lightbox.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.0015);
+    const next = Math.max(0.2, Math.min(8, lb.scale * factor));
+    // Anchor zoom around the cursor: shift translation so the point
+    // under the cursor stays put.
+    const rect = lightboxImg.getBoundingClientRect();
+    const cx = e.clientX - (rect.left + rect.width / 2);
+    const cy = e.clientY - (rect.top + rect.height / 2);
+    const ratio = next / lb.scale;
+    lb.tx -= cx * (ratio - 1);
+    lb.ty -= cy * (ratio - 1);
+    lb.scale = next;
+    applyLightboxTransform();
+  }, { passive: false });
+
+  // Mouse drag-pan.
+  lightboxImg.addEventListener("mousedown", (e) => {
+    lb.dragging = true;
+    lb.sx = e.clientX - lb.tx;
+    lb.sy = e.clientY - lb.ty;
+    e.preventDefault();
+  });
+  window.addEventListener("mousemove", (e) => {
+    if (!lb.dragging) return;
+    lb.tx = e.clientX - lb.sx;
+    lb.ty = e.clientY - lb.sy;
+    applyLightboxTransform();
+  });
+  window.addEventListener("mouseup", () => { lb.dragging = false; });
+
+  // Touch: single-finger pan, two-finger pinch-zoom.
+  let pinchDist = 0;
+  let pinchScale = 1;
+  lightboxImg.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) {
+      e.preventDefault();
+      pinchDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      pinchScale = lb.scale;
+    } else if (e.touches.length === 1) {
+      lb.dragging = true;
+      lb.sx = e.touches[0].clientX - lb.tx;
+      lb.sy = e.touches[0].clientY - lb.ty;
+    }
+  }, { passive: false });
+  lightboxImg.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+      const d = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY,
+      );
+      lb.scale = Math.max(0.2, Math.min(8, pinchScale * (d / pinchDist)));
+      applyLightboxTransform();
+    } else if (e.touches.length === 1 && lb.dragging) {
+      lb.tx = e.touches[0].clientX - lb.sx;
+      lb.ty = e.touches[0].clientY - lb.sy;
+      applyLightboxTransform();
+    }
+  }, { passive: false });
+  lightboxImg.addEventListener("touchend", () => { lb.dragging = false; });
+
+  // Double-click resets zoom + position.
+  lightboxImg.addEventListener("dblclick", resetLightbox);
+
+  // Click backdrop closes (but clicks on the image itself don't).
+  lightbox.addEventListener("click", (e) => {
+    if (e.target === lightbox) closeLightbox();
+  });
+  lightboxClose.addEventListener("click", closeLightbox);
+
+  // ESC closes (in addition to the existing keydown handler for Enter/R/S).
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !lightbox.hidden) {
+      e.stopPropagation();
+      closeLightbox();
+    }
   });
 
   // Initial state.

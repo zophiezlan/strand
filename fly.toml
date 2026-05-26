@@ -1,35 +1,39 @@
-# Fly.io config — adjust app name before first deploy with `fly launch` or `fly apps create`.
-# Pick a region close to expected users; "iad" is a sensible default for North America/Europe mix.
+# fly.toml app configuration file generated for strand on 2026-05-26T14:44:12+10:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "strand"
-primary_region = "iad"
+app = 'strand'
+primary_region = 'syd'
 
 [build]
 
 [env]
-  PORT = "8000"
+  PORT = '8000'
 
 [http_service]
   internal_port = 8000
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
   min_machines_running = 0
-  processes = ["app"]
+  processes = ['app']
 
   [http_service.concurrency]
-    type = "requests"
-    soft_limit = 20
+    type = 'requests'
     hard_limit = 40
+    soft_limit = 20
 
   [[http_service.checks]]
-    interval = "30s"
-    timeout = "5s"
-    grace_period = "10s"
-    method = "get"
-    path = "/health"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'get'
+    path = '/health'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
+  cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 512

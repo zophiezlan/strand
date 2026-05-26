@@ -222,7 +222,7 @@ async def strand(
                     detail=f"Unsupported file type: {single_suffix or '(none)'}. "
                            f"Supported: {', '.join(sorted(SUPPORTED_INCLUDING_ZIP))}.",
                 )
-            out = strand_bytes(single_data, single_filename, opts)
+            out, stats = strand_bytes(single_data, single_filename, opts)
             response_suffix = single_suffix
             download_name = _apply_suffix(single_filename, clean_suffix)
             extra_headers: dict[str, str] = {}
@@ -236,6 +236,7 @@ async def strand(
                 root = _common_root([n for n, _ in items])
                 base_name = (root or "files") + ".zip"
             out, report = strand_zip_bytes(payload, opts, name_suffix=clean_suffix)
+            stats = report.get("stats")
             response_suffix = ".zip"
             download_name = _apply_suffix(base_name, clean_suffix)
             extra_headers = {
@@ -268,9 +269,12 @@ async def strand(
         "Cache-Control": "no-store",
         "X-Strand-Seed": str(opts.seed),
         "Access-Control-Expose-Headers":
-            "Content-Disposition, X-Strand-Seed, X-Strand-Haired, X-Strand-Skipped, X-Strand-Errored",
+            "Content-Disposition, X-Strand-Seed, X-Strand-Haired, X-Strand-Skipped, X-Strand-Errored, X-Strand-Stats",
         **extra_headers,
     }
+    if stats:
+        import json as _json
+        headers["X-Strand-Stats"] = _json.dumps(stats, separators=(",", ":"))
     return StreamingResponse(io.BytesIO(out), media_type=content_type, headers=headers)
 
 

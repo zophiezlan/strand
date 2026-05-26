@@ -9,8 +9,10 @@ art" — just for the stray-hair-on-the-photocopier aesthetic.
 
 Two front-ends, one rendering engine:
 
-- **Web service** — drop a file in a browser, get the haired file back. In-memory
-  only, nothing persisted.
+- **Web page** — drop a file in your browser, get the haired file back. By
+  default the whole pipeline runs in-browser via Pyodide — your file
+  never leaves the page. A "process on server" toggle is there for
+  browsers that struggle with very large files.
 - **CLI** — point it at a directory, optionally with backups, dry-run, mtime
   preservation, and a manifest you can use to undo a run.
 
@@ -54,13 +56,22 @@ Supported file types: PNG, JPG, JPEG, GIF, BMP, WEBP, PDF, PPTX, ZIP.
 
 ## Privacy
 
-- Files are processed entirely in memory and discarded as soon as the
-  response is sent.
+The web page runs Strand entirely in your browser by default. On first
+upload it lazy-loads Pyodide (~10 MB, then cached) and runs the same
+`app/core.py` rendering engine the CLI uses, locally. Your file is read,
+processed, and previewed inside the page — nothing is uploaded.
+
+The "process on server instead" toggle is the explicit opt-in. When ticked,
+the file is POSTed to the same FastAPI service the project has always
+shipped:
+
+- Processed entirely in memory, discarded as soon as the response is sent.
 - Filenames and contents are not logged. Only request envelopes
   (method, path, status, output size).
-- No persistence layer. No analytics. Nothing leaves the process.
+- No persistence layer. No analytics.
 
-If you'd rather not trust a service at all, you can run it locally — see below.
+Same applies to the `POST /strand` API — it's the server path. If you call
+it from a script, you're sending your file to the server.
 
 ## Run it locally
 
@@ -71,6 +82,10 @@ pip install -e .[dev]
 uvicorn app.main:app --reload
 # open http://127.0.0.1:8000
 ```
+
+The server hosts the static page (which boots Pyodide on first drop) and
+also handles the `/strand` POST route used by the server-mode toggle and
+the public API.
 
 ## CLI
 
@@ -180,9 +195,13 @@ Limits: 25 MB max upload, 30 requests / hour / IP, 30 s timeout.
 ```
 app/
 ├─ core.py          # Hair rendering + bytes-based injectors (shared)
-├─ main.py          # FastAPI app, routes, rate limiting
+├─ main.py          # FastAPI app, routes, rate limiting, serves /core.py to the browser
 ├─ cli.py           # `strand` CLI — directory walking, backups, mtime
-└─ static/          # Vanilla HTML/JS landing page
+└─ static/
+   ├─ index.html
+   ├─ app.js               # UI, dispatches to engine or server based on toggle
+   ├─ pyodide_engine.js    # lazy Pyodide boot, runs app/core.py in-browser
+   └─ style.css
 tests/
 ├─ test_inject.py   # Core + HTTP roundtrips
 └─ test_cli.py      # CLI subcommands end-to-end
@@ -192,8 +211,10 @@ pyproject.toml
 ```
 
 `app/core.py` is the single source of truth for hair generation, palettes,
-content-aware placement, and density tiers. The web app and the CLI are thin
-wrappers — keep new rendering behaviour in `core.py` and both surfaces inherit it.
+content-aware placement, and density tiers. The CLI imports it directly;
+the FastAPI server imports it and also serves it at `/core.py` so the
+browser-side Pyodide engine runs the exact same code. Keep new rendering
+behaviour in `core.py` and all three surfaces inherit it.
 
 ## License
 

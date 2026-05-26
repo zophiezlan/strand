@@ -6,6 +6,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8765"],
       "port": 8765
+    },
+    {
+      "name": "strand-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8766", "--bind", "127.0.0.1"],
+      "port": 8766
     }
   ]
 }

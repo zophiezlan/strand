@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Strand · Pyodide smoke test</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 720px; }
+  pre  { background: #f4f4f4; padding: 1em; overflow-x: auto; white-space: pre-wrap; }
+  .ok  { color: #0a7a0a; } .err { color: #b00; }
+  img  { display: block; max-width: 100%; image-rendering: pixelated; border: 1px solid #ddd; margin-top: 1em; }
+</style>
+</head>
+<body>
+<h1>Strand · Pyodide smoke test</h1>
+<p>Loads Pyodide → installs PyMuPDF + python-pptx → fetches <code>app/core.py</code> from this server → runs <code>strand_bytes</code> on a generated PNG. Prints stats + shows the haired image.</p>
+<pre id="log">[booting]</pre>
+<img id="out" alt="haired output will appear here" />
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.29.4/full/pyodide.js"></script>
+<script type="module">
+const log = document.getElementById("log");
+const img = document.getElementById("out");
+const t0 = performance.now();
+const say = (msg, cls) => {
+  const dt = ((performance.now() - t0) / 1000).toFixed(2);
+  log.innerHTML += `\n[+${dt}s] ${cls ? `<span class="${cls}">${msg}</span>` : msg}`;
+};
+
+try {
+  say("loading Pyodide runtime…");
+  const pyodide = await loadPyodide();
+  say("Pyodide runtime up", "ok");
+
+  say("loadPackage: Pillow, pymupdf, lxml, micropip…");
+  await pyodide.loadPackage(["Pillow", "pymupdf", "lxml", "micropip"]);
+  say("native packages loaded", "ok");
+
+  say("micropip: python-pptx…");
+  await pyodide.runPythonAsync(`
+    import micropip
+    await micropip.install("python-pptx")
+  `);
+  say("python-pptx installed", "ok");
+
+  say("fetching app/core.py from this server…");
+  const coreSrc = await (await fetch("../app/core.py")).text();
+  pyodide.FS.mkdir("/app");
+  pyodide.FS.writeFile("/app/__init__.py", "");
+  pyodide.FS.writeFile("/app/core.py", coreSrc);
+  say(`core.py written (${coreSrc.length} bytes)`, "ok");
+
+  say("import app.core + smoke a PNG run…");
+  const result = await pyodide.runPythonAsync(`
+import sys, io, json
+sys.path.insert(0, "/")
+from PIL import Image
+import app.core as core
+
+# Build a tiny test PNG in memory.
+canvas = Image.new("RGB", (640, 400), (245, 240, 232))
+buf = io.BytesIO(); canvas.save(buf, format="PNG")
+src_bytes = buf.getvalue()
+
+opts = core.options_from_ui(palette="dark", intensity="heavy", seed=42)
+out_bytes, stats = core.strand_bytes(src_bytes, "smoke.png", opts)
+
+# Hand back to JS.
+{
+    "out_len": len(out_bytes),
+    "stats": stats,
+    "out_b64": __import__("base64").b64encode(out_bytes).decode("ascii"),
+}
+  `);
+
+  const r = result.toJs({ dict_converter: Object.fromEntries });
+  say(`strand_bytes returned ${r.out_len} bytes`, "ok");
+  say("stats: " + JSON.stringify(r.stats, null, 2));
+  img.src = "data:image/png;base64," + r.out_b64;
+
+  say("PDF smoke — build a 1-page PDF with PyMuPDF, run inject_pdf_bytes…");
+  const pdfRes = await pyodide.runPythonAsync(`
+import io, fitz
+doc = fitz.open()
+page = doc.new_page(width=595, height=842)  # A4 pt
+page.insert_text((50, 100), "Hello strand.", fontsize=14)
+pdf_bytes = doc.tobytes(); doc.close()
+
+opts = core.options_from_ui(palette="brown", intensity="normal", seed=7)
+out, stats = core.strand_bytes(pdf_bytes, "smoke.pdf", opts)
+{"len": len(out), "stats": stats}
+  `);
+  const p = pdfRes.toJs({ dict_converter: Object.fromEntries });
+  say(`PDF: ${p.len} bytes, hairs=${p.stats.hairs}`, "ok");
+
+  say("ALL GREEN ✓", "ok");
+} catch (e) {
+  console.error(e);
+  say("FAILED: " + (e && e.message || e), "err");
+}
+</script>
+</body>
+</html>

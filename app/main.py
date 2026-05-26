@@ -69,6 +69,21 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+# Served so the browser's Pyodide engine can import the same `app.core` the
+# server uses. Single source of truth: keep all rendering behaviour in core.py;
+# both the server-side path and the in-browser Pyodide path read from this file.
+_CORE_PY = Path(__file__).parent / "core.py"
+
+
+@app.get("/core.py")
+def core_py():
+    return FileResponse(
+        _CORE_PY,
+        media_type="text/x-python",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 # Static mount happens at the *bottom* of this module so every explicit route
 # (including `POST /strand`) is registered first. The mount sits at `/` (not
 # `/static`) so that sibling-relative asset paths in index.html resolve both in

@@ -76,6 +76,12 @@
 
     <button id="go" class="primary" disabled>Strand it</button>
 
+    <label class="server-fallback" for="use-server" title="By default Strand runs entirely in your browser — nothing is uploaded. Tick this to send the file to our server instead (handy if your browser struggles with very large files).">
+      <input type="checkbox" id="use-server" />
+      <span>Process on server instead</span>
+      <span class="hint">Default is in-browser — your file never leaves the page.</span>
+    </label>
+
     <section id="status" class="status" hidden></section>
     <section id="result" class="result" hidden>
       <div class="result-meta">
@@ -99,7 +105,7 @@
 
     <footer>
       <p class="privacy">
-        Your file goes through and comes right back to you — nothing is stored or logged.
+        Runs in your browser — your file never leaves the page unless you tick "process on server".
         Shortcuts: <kbd>Enter</kbd> to go · <kbd>R</kbd> for another · <kbd>S</kbd> to repeat the last one.
       </p>
     </footer>
@@ -112,6 +118,6 @@
     <div class="lightbox-hint">Scroll to zoom · drag to pan · double-click to reset · <kbd>Esc</kbd> closes</div>
   </div>
 
-  <script src="app.js" defer></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -13,3 +13,4 @@ venv/
 .idea/
 .vscode/
 .claude/settings.local.json
+.claude/launch.jsonscratch/

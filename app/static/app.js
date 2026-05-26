@@ -1,3 +1,5 @@
+import * as engine from "/pyodide_engine.js";
+
 (() => {
   const dropZone = document.getElementById("drop");
   const fileInput = document.getElementById("file");
@@ -17,11 +19,11 @@
   const statsEl = document.getElementById("stats");
   const statsLineEl = document.getElementById("stats-line");
   const suffixInput = document.getElementById("suffix");
+  const useServerCheckbox = document.getElementById("use-server");
 
   const IMAGE_SUFFIXES = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]);
   const SUPPORTED = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".pdf", ".pptx", ".zip"];
   const MAX_BYTES = 25 * 1024 * 1024;
-  const DEFAULT_SUFFIX = "-strand";
 
   /** Array of File objects currently selected for upload (always >= 0). */
   let currentFiles = [];
@@ -104,6 +106,79 @@
     return f.webkitRelativePath || f.name;
   }
 
+  // Kick off the in-browser engine boot as soon as the user shows intent
+  // (first file drop / pick / paste). Boots once; subsequent calls reuse the
+  // cached interpreter. We don't await it here — by the time the user clicks
+  // "Strand it" it's usually ready, and if not, submit() shows the boot status.
+  // Skipped when the user has opted into the server fallback, to avoid the
+  // ~10 MB download for users who don't need it.
+  let _engineWarmed = false;
+  function warmEngine() {
+    if (_engineWarmed) return;
+    if (useServerCheckbox.checked) return;
+    _engineWarmed = true;
+    engine.prefetch().catch(() => { /* surface only when the user actually runs */ });
+  }
+  // If the user ticks the server checkbox we don't need to warm; if they
+  // later untick, kick the boot off then.
+  useServerCheckbox.addEventListener("change", () => {
+    if (!useServerCheckbox.checked && currentFiles.length) warmEngine();
+  });
+
+  async function runViaEngine({ palette, intensity, seed, nameSuffix }) {
+    // Bytes for the engine. Reading concurrently is faster on multi-file.
+    const fileBuffers = await Promise.all(currentFiles.map(async (f) => ({
+      name: fileRelPath(f),
+      bytes: new Uint8Array(await f.arrayBuffer()),
+    })));
+    return engine.run({
+      files: fileBuffers,
+      palette,
+      intensity,
+      seed,
+      nameSuffix,
+      onStatus: (msg) => showWorking(msg.startsWith("Ready") ? "Adding hair" : msg),
+    });
+  }
+
+  async function runViaServer({ palette, intensity, seed, nameSuffix }) {
+    const form = new FormData();
+    for (const f of currentFiles) {
+      form.append("file", f, fileRelPath(f));
+    }
+    form.append("palette", palette);
+    form.append("intensity", intensity);
+    if (seed != null) form.append("seed", String(seed));
+    if (nameSuffix != null) form.append("name_suffix", nameSuffix);
+
+    const res = await fetch("/strand", { method: "POST", body: form });
+    if (!res.ok) {
+      let detail = `Server returned ${res.status}.`;
+      try {
+        const body = await res.json();
+        if (body && body.detail) detail = body.detail;
+      } catch (_) { /* not JSON */ }
+      throw new Error(detail);
+    }
+    const ab = await res.arrayBuffer();
+    const cd = res.headers.get("Content-Disposition") || "";
+    const m = cd.match(/filename="?([^"]+)"?/);
+    const haired = res.headers.get("X-Strand-Haired");
+    const skipped = res.headers.get("X-Strand-Skipped");
+    const errored = res.headers.get("X-Strand-Errored");
+    const statsHeader = res.headers.get("X-Strand-Stats");
+    return {
+      bytes: new Uint8Array(ab),
+      name: m ? m[1] : currentFiles[0].name,
+      contentType: res.headers.get("Content-Type") || "application/octet-stream",
+      seed: Number(res.headers.get("X-Strand-Seed")) || null,
+      stats: statsHeader ? JSON.parse(statsHeader) : null,
+      haired: haired != null ? Number(haired) : null,
+      skipped: skipped != null ? Number(skipped) : null,
+      errored: errored != null ? Number(errored) : null,
+    };
+  }
+
   function setFiles(files) {
     // Filter to supported types; surface a friendly message if everything got dropped.
     const accepted = files.filter((f) => SUPPORTED.includes(suffixOf(f.name)));
@@ -122,6 +197,7 @@
     currentFiles = accepted;
     lastSeed = null;
     dropZone.classList.add("has-file");
+    warmEngine();
 
     const summary = describeSelection(accepted, total, files.length);
     dropZone.querySelector(".drop-text strong").textContent = summary.title;
@@ -198,55 +274,33 @@
     showWorking("Adding hair");
 
     try {
-      const form = new FormData();
-      for (const f of currentFiles) {
-        // Preserve sub-paths for folder uploads via the third FormData arg.
-        form.append("file", f, fileRelPath(f));
-      }
-      form.append("palette", palette);
-      form.append("intensity", intensity);
-      if (reuseSeed && lastSeed != null) {
-        form.append("seed", String(lastSeed));
-      }
+      // Blank input → no suffix (keep original filename). Anything else is
+      // used verbatim. Matches the prior server-side behaviour.
       const suffixValue = (suffixInput.value || "").trim();
-      // Only send if non-empty AND not the default — keeps the wire small.
-      if (suffixValue && suffixValue !== DEFAULT_SUFFIX) {
-        form.append("name_suffix", suffixValue);
-      } else if (suffixValue === "") {
-        // Explicit empty: user wants no suffix.
-        form.append("name_suffix", "");
+      const nameSuffix = suffixValue === "" ? "" : suffixValue;
+      const seedForRun = reuseSeed && lastSeed != null ? lastSeed : null;
+
+      const result = useServerCheckbox.checked
+        ? await runViaServer({ palette, intensity, seed: seedForRun, nameSuffix })
+        : await runViaEngine({ palette, intensity, seed: seedForRun, nameSuffix });
+
+      if (result.seed != null) {
+        lastSeed = String(result.seed);
+        seedValueEl.textContent = lastSeed;
       }
 
-      const res = await fetch("/strand", { method: "POST", body: form });
-
-      if (!res.ok) {
-        let detail = `Server returned ${res.status}.`;
-        try {
-          const body = await res.json();
-          if (body && body.detail) detail = body.detail;
-        } catch (_) { /* not JSON; keep default */ }
-        showError(detail);
-        return;
-      }
-
-      const echoedSeed = res.headers.get("X-Strand-Seed");
-      if (echoedSeed) {
-        lastSeed = echoedSeed;
-        seedValueEl.textContent = echoedSeed;
-      }
-
-      const haired = res.headers.get("X-Strand-Haired");
-      const skipped = res.headers.get("X-Strand-Skipped");
-      const errored = res.headers.get("X-Strand-Errored");
+      const haired = result.haired;
+      const skipped = result.skipped;
+      const errored = result.errored;
       const isZipResponse = haired != null || skipped != null;
 
       // Stats panel — hidden by default, opens on click for nerds who want
       // to know which morphologies got drawn and across how many pages.
-      renderStats(res.headers.get("X-Strand-Stats"));
+      renderStats(result.stats ? JSON.stringify(result.stats) : null);
 
-      const blob = await res.blob();
+      const blob = new Blob([result.bytes], { type: result.contentType });
       const singleFile = currentFiles[0];
-      const downloadName = downloadNameFrom(res, singleFile.name);
+      const downloadName = result.name;
       const suffix = suffixOf(singleFile.name);
 
       // Stash for the explicit Download button — the page no longer
@@ -280,7 +334,7 @@
         showInfo("Done — ready when you are.");
       }
     } catch (err) {
-      showError(`Network error: ${err.message || err}`);
+      showError(err.message || String(err));
     } finally {
       goBtn.disabled = false;
       rerollSameBtn.disabled = lastSeed == null;
@@ -438,14 +492,6 @@
     return s.replace(/[&<>"']/g, (ch) =>
       ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]),
     );
-  }
-
-  function downloadNameFrom(res, fallback) {
-    const cd = res.headers.get("Content-Disposition") || "";
-    const m = cd.match(/filename="?([^"]+)"?/);
-    if (m) return m[1];
-    const i = fallback.lastIndexOf(".");
-    return i < 0 ? `${fallback}-strand` : `${fallback.slice(0, i)}-strand${fallback.slice(i)}`;
   }
 
   function triggerDownload(blob, name) {

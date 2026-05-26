@@ -1,14 +1,52 @@
 :root {
   --bg: #f6f5f2;
   --panel: #ffffff;
+  --panel-soft: #f3efe7;       /* result-meta card, ghost hover, stats */
+  --panel-soft-hover: #ebe6dc;
   --ink: #1a1a1a;
   --ink-soft: #555;
   --line: #e2dfd8;
+  --line-strong: #c8c4ba;       /* hover borders */
   --accent: #1a1a1a;
   --accent-ink: #ffffff;
   --selected: #1a1a1a;
   --error: #b3261e;
+  --drop-hover-bg: #fbfaf7;
   --shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  /* Wild density tier (Hirsute / Werewolf / Cousin Itt) — same shape as a
+     normal chip but with a warm tint so the joke reads. The "deviation" from
+     a normal chip is a small warm shift, not a contrast inversion. Dark mode
+     mirrors the same small warm shift instead of inheriting the light values. */
+  --wild-bg: #fdf6ee;
+  --wild-ink: #6c4a3a;
+  --wild-line: #ead9c4;
+  --wild-line-hover: #d9c2a4;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #15161a;
+  --panel: #1f2127;
+  --panel-soft: #262830;
+  --panel-soft-hover: #303239;
+  --ink: #e9e7e3;
+  --ink-soft: #9a958d;
+  --line: #2e3038;
+  --line-strong: #3d4049;
+  --accent: #e9e7e3;
+  --accent-ink: #15161a;
+  --selected: #e9e7e3;
+  --error: #ff8077;
+  --drop-hover-bg: #23252c;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  /* Warm-shifted equivalents of the dark panel — same kind of deviation from
+     --panel as the light mode wild row has from white, just in the other
+     direction along the lightness axis. */
+  --wild-bg: #251f1a;
+  --wild-ink: #d4ad88;
+  --wild-line: #3a2f25;
+  --wild-line-hover: #4d3d2e;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -50,11 +88,11 @@ header .tag {
   box-shadow: var(--shadow);
 }
 
-.drop:hover { border-color: #c8c4ba; }
+.drop:hover { border-color: var(--line-strong); }
 .drop.dragover {
   border-color: var(--accent);
   border-style: solid;
-  background: #fbfaf7;
+  background: var(--drop-hover-bg);
   transform: scale(1.015);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
 }
@@ -150,12 +188,28 @@ legend {
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
-.chip:hover { border-color: #c8c4ba; }
+.chip:hover { border-color: var(--line-strong); }
 .chip.selected {
   background: var(--selected);
   color: var(--accent-ink);
-  border-color: var(--selected);
+  /* Border picks up the active palette's hair colour (set on .controls via
+     data-palette); both the selected palette chip and selected density chip
+     get the same tint so picking "red" reads as a connected pair. */
+  border-color: var(--palette-tint, var(--selected));
+  box-shadow: 0 0 0 2px var(--palette-tint-soft, transparent);
+  transition: background 120ms ease, color 120ms ease,
+              border-color 200ms ease, box-shadow 200ms ease;
 }
+
+/* Per-palette tint tokens — the visible highlight tone from each palette,
+   nudged toward legibility against the dark fill of a selected chip. */
+.controls[data-palette="dark"]   { --palette-tint: rgb(110, 84, 64); --palette-tint-soft: rgba(110, 84, 64, 0.25); }
+.controls[data-palette="brown"]  { --palette-tint: rgb(140, 95, 55);  --palette-tint-soft: rgba(140, 95, 55, 0.28); }
+.controls[data-palette="blonde"] { --palette-tint: rgb(210, 180, 130);--palette-tint-soft: rgba(210, 180, 130, 0.32); }
+.controls[data-palette="grey"]   { --palette-tint: rgb(170, 168, 165);--palette-tint-soft: rgba(170, 168, 165, 0.28); }
+.controls[data-palette="white"]  { --palette-tint: rgb(220, 215, 205);--palette-tint-soft: rgba(220, 215, 205, 0.30); }
+.controls[data-palette="red"]    { --palette-tint: rgb(185, 95, 55);  --palette-tint-soft: rgba(185, 95, 55, 0.30); }
+.controls[data-palette="mixed"]  { --palette-tint: rgb(160, 110, 70); --palette-tint-soft: rgba(160, 110, 70, 0.28); }
 
 /* Palette chips show a colour-range swatch — a horizontal gradient from the
    palette's lower bound to its upper bound. Layout (padding, height, gap)
@@ -190,15 +244,15 @@ legend {
 
 /* Wild density tiers — same shape, slightly different idle tint so the joke reads. */
 .chip.wild {
-  color: #6c4a3a;
-  background: #fdf6ee;
-  border-color: #ead9c4;
+  color: var(--wild-ink);
+  background: var(--wild-bg);
+  border-color: var(--wild-line);
 }
-.chip.wild:hover { border-color: #d9c2a4; }
+.chip.wild:hover { border-color: var(--wild-line-hover); }
 .chip.wild.selected {
   background: #6c4a3a;
   color: #fff;
-  border-color: #6c4a3a;
+  border-color: var(--palette-tint, #6c4a3a);
 }
 
 .text-input {
@@ -304,7 +358,7 @@ legend {
 }
 
 .result-meta code {
-  background: #f3efe7;
+  background: var(--panel-soft);
   padding: 3px 8px;
   border-radius: 6px;
   color: var(--ink);
@@ -313,7 +367,7 @@ legend {
   user-select: all;
   transition: background 200ms ease, color 200ms ease;
 }
-.result-meta code[title]:hover { background: #ebe6dc; }
+.result-meta code[title]:hover { background: var(--panel-soft-hover); }
 .result-meta code.copied { background: var(--accent); color: var(--accent-ink); }
 .result-meta code.copied::after { content: " ✓"; }
 
@@ -330,13 +384,13 @@ legend {
   transition: background 120ms ease;
 }
 .ghost + .ghost { margin-left: 6px; }
-.ghost:hover { background: #f3efe7; }
+.ghost:hover { background: var(--panel-soft); }
 .ghost:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .zip-summary {
   margin-top: 10px;
   padding: 10px 12px;
-  background: #f9f6f0;
+  background: var(--panel-soft);
   border-radius: 8px;
   font-size: 14px;
 }
@@ -391,10 +445,10 @@ legend {
   -webkit-user-select: none;
   transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
 }
-.compare:hover { border-color: #c8c4ba; background: #faf9f5; }
+.compare:hover { border-color: var(--line-strong); background: var(--drop-hover-bg); }
 .compare.peeking,
 .compare:active {
-  background: #f3efe7;
+  background: var(--panel-soft);
   border-color: var(--accent);
   transform: translateY(1px);
 }
@@ -505,28 +559,106 @@ legend {
   font: 500 11px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Server fallback toggle — quiet, secondary affordance under "Strand it" */
-.server-fallback {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 8px;
-  margin: 10px 2px 0;
-  font-size: 13px;
+/* Settings gear button — top-right of the content column.
+   `.wrap` is max-width 640px and centred, so on wide viewports we pin the
+   button to the wrap's right edge (with a 14px inset) instead of letting it
+   drift to the viewport corner. On narrow screens (where the wrap fills the
+   width) it collapses to a flat 14px. */
+.settings-btn {
+  position: fixed;
+  /* Top matches the wrap's top padding so the button's top edge lines up
+     with the title's line-box top. */
+  top: 40px;
+  right: max(14px, calc(50vw - 320px + 14px));
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel);
   color: var(--ink-soft);
+  border: 1px solid var(--line);
+  border-radius: 50%;
   cursor: pointer;
+  box-shadow: var(--shadow);
+  z-index: 100;
+  transition: color 120ms ease, transform 240ms ease, border-color 120ms ease;
+}
+.settings-btn:hover { color: var(--ink); border-color: var(--line-strong); }
+.settings-btn:hover svg { transform: rotate(45deg); }
+.settings-btn svg { width: 18px; height: 18px; transition: transform 240ms ease; }
+
+/* Settings modal — native <dialog> */
+.settings-modal {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18);
+}
+.settings-modal::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+  backdrop-filter: blur(2px);
+}
+.settings-form { display: flex; flex-direction: column; gap: 18px; padding: 18px 20px 16px; }
+.settings-header { display: flex; align-items: center; justify-content: space-between; }
+.settings-header h2 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
+.settings-close {
+  background: transparent;
+  border: 0;
+  color: var(--ink-soft);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.settings-close:hover { background: var(--panel-soft); color: var(--ink); }
+
+.settings-group { border: 0; padding: 0; margin: 0; }
+.settings-group legend { padding: 0 0 8px; font-size: 13px; color: var(--ink-soft); font-weight: 500; }
+.settings-group .row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.settings-radio,
+.settings-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 14px;
   user-select: none;
 }
-.server-fallback input[type="checkbox"] {
-  margin: 0;
-  cursor: pointer;
+.settings-radio:hover,
+.settings-check:hover { border-color: var(--line-strong); }
+.settings-radio input,
+.settings-check input { margin: 0; cursor: pointer; accent-color: var(--accent); }
+.settings-radio:has(input:checked) {
+  background: var(--selected);
+  color: var(--accent-ink);
+  border-color: var(--selected);
 }
-.server-fallback .hint {
-  flex: 1 1 100%;
-  margin: 2px 0 0 24px;
+
+.settings-group .hint {
+  margin: 8px 2px 0;
   font-size: 12px;
   color: var(--ink-soft);
+  line-height: 1.45;
 }
+
+.settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-actions .primary { padding: 8px 18px; font-size: 14px; }
 
 /* Footer */
 footer {

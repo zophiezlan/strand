@@ -16,8 +16,22 @@
   <meta name="twitter:card" content="summary" />
 
   <link rel="stylesheet" href="style.css" />
+  <script>
+    // Apply persisted theme before the page paints to avoid a light→dark flash.
+    (function () {
+      const t = localStorage.getItem("strand-theme") || "system";
+      const dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    })();
+  </script>
 </head>
 <body>
+  <button id="settings-btn" class="settings-btn" type="button" aria-label="Settings" title="Settings">
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a7.03 7.03 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 13.5 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.6.24-1.17.57-1.69.98l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98L1.96 14.63a.5.5 0 0 0-.12.64l2 3.46c.14.24.43.34.68.22l2.49-1c.52.4 1.09.74 1.69.98l.38 2.65c.04.24.26.42.5.42h4c.24 0 .46-.18.5-.42l.38-2.65c.6-.24 1.17-.57 1.69-.98l2.49 1c.25.1.54 0 .68-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" />
+    </svg>
+  </button>
+
   <main class="wrap">
     <header>
       <h1>Strand</h1>
@@ -76,12 +90,6 @@
 
     <button id="go" class="primary" disabled>Strand it</button>
 
-    <label class="server-fallback" for="use-server" title="By default Strand runs entirely in your browser — nothing is uploaded. Tick this to send the file to our server instead (handy if your browser struggles with very large files).">
-      <input type="checkbox" id="use-server" />
-      <span>Process on server instead</span>
-      <span class="hint">Default is in-browser — your file never leaves the page.</span>
-    </label>
-
     <section id="status" class="status" hidden></section>
     <section id="result" class="result" hidden>
       <div class="result-meta">
@@ -117,6 +125,37 @@
     <button type="button" id="lightbox-close" class="lightbox-close" aria-label="Close">×</button>
     <div class="lightbox-hint">Scroll to zoom · drag to pan · double-click to reset · <kbd>Esc</kbd> closes</div>
   </div>
+
+  <dialog id="settings-modal" class="settings-modal" aria-label="Settings">
+    <form method="dialog" class="settings-form">
+      <header class="settings-header">
+        <h2>Settings</h2>
+        <button type="submit" value="close" class="settings-close" aria-label="Close">×</button>
+      </header>
+
+      <fieldset class="settings-group">
+        <legend>Theme</legend>
+        <div class="row" id="theme" role="radiogroup">
+          <label class="settings-radio"><input type="radio" name="theme" value="system" /> Match system</label>
+          <label class="settings-radio"><input type="radio" name="theme" value="light" /> Light</label>
+          <label class="settings-radio"><input type="radio" name="theme" value="dark" /> Dark</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="settings-group">
+        <legend>Processing</legend>
+        <label class="settings-check" for="use-server">
+          <input type="checkbox" id="use-server" />
+          <span>Process on server instead</span>
+        </label>
+        <p class="hint">By default Strand runs entirely in your browser — your file never leaves the page. Tick this to upload it to our server instead (handy if your browser struggles with very large files).</p>
+      </fieldset>
+
+      <menu class="settings-actions">
+        <button type="submit" value="close" class="primary">Done</button>
+      </menu>
+    </form>
+  </dialog>
 
   <script type="module" src="app.js"></script>
 </body>

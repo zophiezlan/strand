@@ -20,6 +20,47 @@ import * as engine from "/pyodide_engine.js";
   const statsLineEl = document.getElementById("stats-line");
   const suffixInput = document.getElementById("suffix");
   const useServerCheckbox = document.getElementById("use-server");
+  const settingsBtn = document.getElementById("settings-btn");
+  const settingsModal = document.getElementById("settings-modal");
+  const themeRadios = document.querySelectorAll('input[name="theme"]');
+
+  // --- Settings: theme + server-mode persistence -------------------------
+  // Theme is applied pre-paint by an inline script in index.html so we don't
+  // flash light on first load. This block syncs the radio UI to the persisted
+  // value, keeps "system" mode reactive to OS-level changes, and persists
+  // user choices for both controls.
+  const THEME_KEY = "strand-theme";
+  const SERVER_KEY = "strand-use-server";
+  const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+
+  function applyTheme(setting) {
+    const dark = setting === "dark" || (setting === "system" && themeMedia.matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  }
+
+  let themeSetting = localStorage.getItem(THEME_KEY) || "system";
+  for (const r of themeRadios) r.checked = r.value === themeSetting;
+  themeMedia.addEventListener("change", () => {
+    if (themeSetting === "system") applyTheme("system");
+  });
+  for (const r of themeRadios) {
+    r.addEventListener("change", () => {
+      if (!r.checked) return;
+      themeSetting = r.value;
+      localStorage.setItem(THEME_KEY, themeSetting);
+      applyTheme(themeSetting);
+    });
+  }
+
+  // Server-mode: default off (per spec). Persisted across reloads if the user
+  // explicitly opts in; the HTML default of "unchecked" wins on first visit.
+  useServerCheckbox.checked = localStorage.getItem(SERVER_KEY) === "1";
+  useServerCheckbox.addEventListener("change", () => {
+    if (useServerCheckbox.checked) localStorage.setItem(SERVER_KEY, "1");
+    else localStorage.removeItem(SERVER_KEY);
+  });
+
+  settingsBtn.addEventListener("click", () => settingsModal.showModal());
 
   const IMAGE_SUFFIXES = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]);
   const SUPPORTED = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".pdf", ".pptx", ".zip"];
@@ -44,6 +85,11 @@ import * as engine from "/pyodide_engine.js";
   let lastOriginalUrl = null;
 
   // --- Chip selectors ---
+  // The .controls section carries data-palette so CSS can tint the selected
+  // pills (both the palette chip and the density chip) with the active hair
+  // colour. Initial value matches the default palette declared above.
+  const controlsEl = document.querySelector(".controls");
+  controlsEl.dataset.palette = palette;
   for (const group of ["palette", "intensity"]) {
     const groupEl = document.getElementById(group);
     groupEl.addEventListener("click", (e) => {
@@ -53,8 +99,12 @@ import * as engine from "/pyodide_engine.js";
         c.classList.toggle("selected", c === chip);
         c.setAttribute("aria-checked", c === chip ? "true" : "false");
       }
-      if (group === "palette") palette = chip.dataset.value;
-      else intensity = chip.dataset.value;
+      if (group === "palette") {
+        palette = chip.dataset.value;
+        controlsEl.dataset.palette = palette;
+      } else {
+        intensity = chip.dataset.value;
+      }
     });
   }
 

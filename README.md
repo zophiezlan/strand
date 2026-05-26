@@ -1,10 +1,18 @@
 # Hairify
 
 A tiny novelty filter that drops procedurally-drawn hairs onto images, PDFs,
-and PowerPoint files. Drag and drop in, hairified file out.
+and PowerPoint files. Drag and drop in, hairified file out — or run the CLI
+over a folder.
 
 In the same family as "make this look like a Polaroid" or "convert to ASCII
 art" — just for the stray-hair-on-the-photocopier aesthetic.
+
+Two front-ends, one rendering engine:
+
+- **Web service** — drop a file in a browser, get the haired file back. In-memory
+  only, nothing persisted.
+- **CLI** — point it at a directory, optionally with backups, dry-run, mtime
+  preservation, and a manifest you can use to undo a run.
 
 ## What it does
 
@@ -50,6 +58,45 @@ pip install -e .[dev]
 uvicorn app.main:app --reload
 # open http://127.0.0.1:8000
 ```
+
+## CLI
+
+`pip install -e .` also installs a `hairify` command.
+
+```bash
+# Hairify every supported file under ./folder, with backups + a manifest.
+hairify inject ./folder --intensity normal --palette dark --seed 42
+
+# Dry-run first to see what would be touched.
+hairify inject ./folder --dry-run
+
+# Crank the joke up.
+hairify inject ./folder --intensity cousin-itt --palette mixed
+
+# Undo a run.
+hairify restore ./folder/.hairify_backups/manifest.json
+
+# Render a grid of sample hairs (good for previewing a palette).
+hairify preview ./samples.png --palette grey --count 16
+```
+
+CLI-specific behaviour, deliberately not in the web version:
+
+- **Directory walking** with skip rules (`.git`, `node_modules`, hidden dirs,
+  build artefacts).
+- **mtime preservation** (`--preserve-mtime`, on by default; `--no-preserve-mtime`
+  to opt out). Filesystem access makes this honest — browsers don't allow it,
+  so the web version doesn't pretend to.
+- **Backups + manifest**: every modified file is copied to
+  `<dir>/.hairify_backups/` first; the run's manifest can be passed to
+  `hairify restore` to roll back.
+- **`--dry-run`** to list candidates without changing anything.
+- **`--no-backup`** if you're already under version control and don't need
+  the safety net.
+
+The CLI uses the same `app/core.py` rendering and placement code as the web
+service, so palette / intensity / content-aware placement / seed semantics are
+identical across both surfaces.
 
 ## Test
 
@@ -106,15 +153,21 @@ Limits: 25 MB max upload, 30 requests / hour / IP, 30 s timeout.
 
 ```
 app/
+├─ core.py          # Hair rendering + bytes-based injectors (shared)
 ├─ main.py          # FastAPI app, routes, rate limiting
-├─ core.py          # Hair rendering + bytes-based injectors
+├─ cli.py           # `hairify` CLI — directory walking, backups, mtime
 └─ static/          # Vanilla HTML/JS landing page
 tests/
-└─ test_inject.py   # Roundtrip tests with generated fixtures
+├─ test_inject.py   # Core + HTTP roundtrips
+└─ test_cli.py      # CLI subcommands end-to-end
 fly.toml
 Dockerfile
 pyproject.toml
 ```
+
+`app/core.py` is the single source of truth for hair generation, palettes,
+content-aware placement, and density tiers. The web app and the CLI are thin
+wrappers — keep new rendering behaviour in `core.py` and both surfaces inherit it.
 
 ## License
 

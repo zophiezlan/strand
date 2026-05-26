@@ -1,4 +1,4 @@
-# Hairify
+# Strand
 
 A tiny novelty filter that drops procedurally-drawn hairs onto images, PDFs,
 and PowerPoint files. Drag and drop in, hairified file out — or run the CLI
@@ -30,11 +30,11 @@ Two front-ends, one rendering engine:
   other half they land somewhere stray, which is what a real hair would do.
 - **ZIP uploads**: drop a zip, get a zip. Each supported entry inside is
   hairified; unsupported entries pass through unchanged. A
-  `_hairify-report.txt` summarising the run is added to the output.
-- **Seed control**: every response includes an `X-Hairify-Seed` header.
+  `_strand-report.txt` summarising the run is added to the output.
+- **Seed control**: every response includes an `X-Strand-Seed` header.
   Re-submit with the same seed to reproduce the same hairs exactly, or
   re-roll for a fresh take without re-uploading.
-- **Custom filename suffix**: default is `-haired`. Override it (e.g.
+- **Custom filename suffix**: default is `-strand`. Override it (e.g.
   `.v2`) or leave it empty to keep the original name.
 
 Supported file types: PNG, JPG, JPEG, GIF, BMP, WEBP, PDF, PPTX, ZIP.
@@ -61,23 +61,23 @@ uvicorn app.main:app --reload
 
 ## CLI
 
-`pip install -e .` also installs a `hairify` command.
+`pip install -e .` also installs a `strand` command.
 
 ```bash
-# Hairify every supported file under ./folder, with backups + a manifest.
-hairify inject ./folder --intensity normal --palette dark --seed 42
+# Strand every supported file under ./folder, with backups + a manifest.
+strand inject ./folder --intensity normal --palette dark --seed 42
 
 # Dry-run first to see what would be touched.
-hairify inject ./folder --dry-run
+strand inject ./folder --dry-run
 
 # Crank the joke up.
-hairify inject ./folder --intensity cousin-itt --palette mixed
+strand inject ./folder --intensity cousin-itt --palette mixed
 
 # Undo a run.
-hairify restore ./folder/.hairify_backups/manifest.json
+strand restore ./folder/.strand_backups/manifest.json
 
 # Render a grid of sample hairs (good for previewing a palette).
-hairify preview ./samples.png --palette grey --count 16
+strand preview ./samples.png --palette grey --count 16
 ```
 
 CLI-specific behaviour, deliberately not in the web version:
@@ -88,8 +88,8 @@ CLI-specific behaviour, deliberately not in the web version:
   to opt out). Filesystem access makes this honest — browsers don't allow it,
   so the web version doesn't pretend to.
 - **Backups + manifest**: every modified file is copied to
-  `<dir>/.hairify_backups/` first; the run's manifest can be passed to
-  `hairify restore` to roll back.
+  `<dir>/.strand_backups/` first; the run's manifest can be passed to
+  `strand restore` to roll back.
 - **`--dry-run`** to list candidates without changing anything.
 - **`--no-backup`** if you're already under version control and don't need
   the safety net.
@@ -122,8 +122,8 @@ Edit `fly.toml`'s `app` field to a unique name before the first deploy.
 ### Docker (anywhere)
 
 ```bash
-docker build -t hairify .
-docker run -p 8000:8000 hairify
+docker build -t strand .
+docker run -p 8000:8000 strand
 ```
 
 ## API
@@ -131,18 +131,18 @@ docker run -p 8000:8000 hairify
 One endpoint, multipart form. Useful if you want to script this.
 
 ```
-POST /hairify
+POST /strand
   file:        <upload>                                       # required
   palette:     dark|mixed|blonde|grey|brown|white|red         # default: dark
   intensity:   subtle|normal|heavy|hirsute|werewolf|cousin-itt # default: normal
   seed:        <int>                                          # optional — reproduce a prior result
-  name_suffix: <string>                                       # optional — default: "-haired"; empty = keep original name
+  name_suffix: <string>                                       # optional — default: "-strand"; empty = keep original name
 ```
 
 Response headers:
 
-- `X-Hairify-Seed` — the seed used (echo it back as `seed=` to reproduce)
-- For ZIP responses: `X-Hairify-Haired`, `X-Hairify-Skipped`, `X-Hairify-Errored`
+- `X-Strand-Seed` — the seed used (echo it back as `seed=` to reproduce)
+- For ZIP responses: `X-Strand-Haired`, `X-Strand-Skipped`, `X-Strand-Errored`
 
 Returns the haired file with `Content-Disposition: attachment`.
 Limits: 25 MB max upload, 30 requests / hour / IP, 30 s timeout.
@@ -155,7 +155,7 @@ Limits: 25 MB max upload, 30 requests / hour / IP, 30 s timeout.
 app/
 ├─ core.py          # Hair rendering + bytes-based injectors (shared)
 ├─ main.py          # FastAPI app, routes, rate limiting
-├─ cli.py           # `hairify` CLI — directory walking, backups, mtime
+├─ cli.py           # `strand` CLI — directory walking, backups, mtime
 └─ static/          # Vanilla HTML/JS landing page
 tests/
 ├─ test_inject.py   # Core + HTTP roundtrips

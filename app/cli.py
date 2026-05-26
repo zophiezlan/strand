@@ -1,5 +1,5 @@
 """
-Hairify CLI — apply procedural hairs to images, PDFs, and pptx files on disk.
+Strand CLI — apply procedural hairs to images, PDFs, and pptx files on disk.
 
 Thin wrapper over `app.core`: the same hair generation, palettes, density
 tiers, and content-aware placement as the web service. The differences are
@@ -7,9 +7,9 @@ the filesystem-y things the web version legitimately can't (or shouldn't) do —
 directory walking, backups + restore, mtime preservation, dry-run.
 
 Usage:
-    hairify inject ./folder --intensity hirsute --palette mixed
-    hairify restore ./folder/.hairify_backups/manifest.json
-    hairify preview ./samples.png --palette grey --count 16
+    strand inject ./folder --intensity hirsute --palette mixed
+    strand restore ./folder/.strand_backups/manifest.json
+    strand preview ./samples.png --palette grey --count 16
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ from .core import (
     PALETTE_NAMES,
     SUPPORTED_SUFFIXES,
     generate_hair,
-    hairify_bytes,
+    strand_bytes,
     options_from_ui,
 )
 
@@ -39,7 +39,7 @@ from .core import (
 # Directories the walker should never descend into.
 SKIP_DIR_NAMES = {
     ".git", ".hg", ".svn", "__pycache__", "node_modules", ".venv", "venv",
-    ".hairify_backups", ".haired_backups", ".idea", ".vscode", "dist", "build",
+    ".strand_backups", ".haired_backups", ".idea", ".vscode", "dist", "build",
 }
 
 
@@ -71,10 +71,10 @@ def _enumerate_candidates(root: Path) -> list[tuple[Path, Path]]:
 
 
 def _inject_file(path: Path, opts, preserve_mtime: bool) -> None:
-    """Hairify a single file in place. May raise; caller handles backup/restore."""
+    """Strand a single file in place. May raise; caller handles backup/restore."""
     stat = path.stat() if preserve_mtime else None
     data = path.read_bytes()
-    out = hairify_bytes(data, path.name, opts)
+    out = strand_bytes(data, path.name, opts)
     path.write_bytes(out)
     if stat is not None:
         os.utime(path, (stat.st_atime, stat.st_mtime))
@@ -101,7 +101,7 @@ def cmd_inject(args: argparse.Namespace) -> int:
         print(f"\n(seed would be: {base_seed})")
         return 0
 
-    backup_dir = (args.backup_dir or (root / ".hairify_backups")).resolve()
+    backup_dir = (args.backup_dir or (root / ".strand_backups")).resolve()
     manifest_path = (args.manifest or (backup_dir / "manifest.json")).resolve()
     do_backup = not args.no_backup
 
@@ -221,12 +221,12 @@ def cmd_preview(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="hairify",
+        prog="strand",
         description="Apply procedural hairs to images, PDFs, and pptx files on disk.",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    inj = sub.add_parser("inject", help="Walk a directory and hairify supported files.")
+    inj = sub.add_parser("inject", help="Walk a directory and strand supported files.")
     inj.add_argument("directory", type=Path)
     inj.add_argument(
         "--intensity", choices=INTENSITY_ORDER, default="normal",
@@ -254,7 +254,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inj.add_argument(
         "--backup-dir", type=Path, default=None,
-        help="Backup location (default: <directory>/.hairify_backups).",
+        help="Backup location (default: <directory>/.strand_backups).",
     )
     inj.add_argument(
         "--manifest", type=Path, default=None,

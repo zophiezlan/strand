@@ -1,7 +1,7 @@
 # Fly.io config — adjust app name before first deploy with `fly launch` or `fly apps create`.
 # Pick a region close to expected users; "iad" is a sensible default for North America/Europe mix.
 
-app = "hairify"
+app = "strand"
 primary_region = "iad"
 
 [build]

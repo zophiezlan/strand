@@ -1,5 +1,5 @@
 """
-Tests for the `hairify` CLI. Invokes `app.cli.main` directly with argv to
+Tests for the `strand` CLI. Invokes `app.cli.main` directly with argv to
 avoid subprocess overhead.
 """
 
@@ -74,7 +74,7 @@ def test_cli_inject_dry_run_changes_nothing(tree: Path, capsys):
     # File untouched.
     assert (tree / "photo.png").read_bytes() == before
     # No backup dir created.
-    assert not (tree / ".hairify_backups").exists()
+    assert not (tree / ".strand_backups").exists()
 
 
 def test_cli_inject_modifies_and_creates_manifest(tree: Path):
@@ -87,7 +87,7 @@ def test_cli_inject_modifies_and_creates_manifest(tree: Path):
     assert (tree / "photo.png").read_bytes() != before_png
     assert (tree / "sub" / "notes.pdf").read_bytes() != before_pdf
 
-    manifest_path = tree / ".hairify_backups" / "manifest.json"
+    manifest_path = tree / ".strand_backups" / "manifest.json"
     assert manifest_path.is_file()
     manifest = json.loads(manifest_path.read_text())
     assert manifest["intensity"] == "normal"
@@ -136,7 +136,7 @@ def test_cli_inject_no_preserve_mtime_bumps_mtime(tree: Path):
 def test_cli_inject_no_backup_skips_manifest(tree: Path):
     rc = main(["inject", str(tree), "--seed", "1", "--no-backup"])
     assert rc == 0
-    assert not (tree / ".hairify_backups").exists()
+    assert not (tree / ".strand_backups").exists()
 
 
 def test_cli_inject_is_reproducible_with_seed(tmp_path: Path):
@@ -168,7 +168,7 @@ def test_cli_restore_roundtrips(tree: Path):
     assert rc == 0
     assert (tree / "photo.png").read_bytes() != original
 
-    manifest = tree / ".hairify_backups" / "manifest.json"
+    manifest = tree / ".strand_backups" / "manifest.json"
     rc = main(["restore", str(manifest)])
     assert rc == 0
     assert (tree / "photo.png").read_bytes() == original

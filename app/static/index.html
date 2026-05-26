@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Hairify — drop a file, get hair</title>
+  <title>Strand — drop a file, get hair</title>
   <meta name="description" content="A tiny novelty filter that drops procedural hairs onto images, PDFs, and slide decks." />
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>〰️</text></svg>" />
   <link rel="stylesheet" href="/static/style.css" />
@@ -11,7 +11,7 @@
 <body>
   <main class="wrap">
     <header>
-      <h1>Hairify</h1>
+      <h1>Strand</h1>
       <p class="tag">Drop a file. Get the same file, but with a procedural hair gently strewn across it.</p>
     </header>
 
@@ -52,12 +52,12 @@
 
       <fieldset>
         <legend>Filename suffix</legend>
-        <input type="text" id="suffix" class="text-input" maxlength="32" placeholder="-haired" />
+        <input type="text" id="suffix" class="text-input" maxlength="32" placeholder="-strand" />
         <div class="hint">Leave blank to keep the original name. Inside a ZIP, each file gets this suffix too.</div>
       </fieldset>
     </section>
 
-    <button id="go" class="primary" disabled>Hairify it</button>
+    <button id="go" class="primary" disabled>Strand it</button>
 
     <section id="status" class="status" hidden></section>
     <section id="result" class="result" hidden>

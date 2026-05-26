@@ -1,5 +1,5 @@
 """
-Hairify — FastAPI app.
+Strand — FastAPI app.
 
 Reads the upload into memory, processes it, returns the result as a streaming
 response. Nothing hits disk; nothing is logged about the file's contents.
@@ -23,15 +23,15 @@ from .core import (
     SUPPORTED_INCLUDING_ZIP,
     SUPPORTED_SUFFIXES,
     ZIP_SUFFIXES,
-    hairify_bytes,
-    hairify_zip_bytes,
+    strand_bytes,
+    strand_zip_bytes,
     options_from_ui,
 )
 
 # --- Logging ---------------------------------------------------------------
 # Log request envelopes (method, path, status) but never file contents or names.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("hairify")
+log = logging.getLogger("strand")
 
 # Quiet python-pptx + PIL chatter.
 for noisy in ("PIL", "pptx"):
@@ -46,7 +46,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 app = FastAPI(
-    title="Hairify",
+    title="Strand",
     description="Procedural-hair novelty filter for images, PDFs, and pptx files.",
     docs_url=None,
     redoc_url=None,
@@ -88,7 +88,7 @@ _OUTPUT_CONTENT_TYPES = {
 # build the final download name from it, so no path bits or quotes.
 _SUFFIX_BLOCKLIST = set('/\\:*?"<>|\r\n\0')
 _MAX_SUFFIX_LEN = 32
-_DEFAULT_SUFFIX = "-haired"
+_DEFAULT_SUFFIX = "-strand"
 
 
 def _suffix_of(name: str) -> str:
@@ -134,9 +134,9 @@ def _parse_seed(raw: str | None) -> int | None:
     return v & 0x7FFFFFFF
 
 
-@app.post("/hairify")
+@app.post("/strand")
 @limiter.limit("30/hour")
-async def hairify(
+async def strand(
     request: Request,
     file: UploadFile = File(...),
     palette: str = Form("dark"),
@@ -176,22 +176,22 @@ async def hairify(
 
     try:
         if suffix in ZIP_SUFFIXES:
-            out, report = hairify_zip_bytes(data, opts, name_suffix=clean_suffix)
+            out, report = strand_zip_bytes(data, opts, name_suffix=clean_suffix)
             extra_headers = {
-                "X-Hairify-Haired": str(report["haired_count"]),
-                "X-Hairify-Skipped": str(report["skipped_count"]),
-                "X-Hairify-Errored": str(report["error_count"]),
+                "X-Strand-Haired": str(report["haired_count"]),
+                "X-Strand-Skipped": str(report["skipped_count"]),
+                "X-Strand-Errored": str(report["error_count"]),
             }
         else:
-            out = hairify_bytes(data, filename, opts)
+            out = strand_bytes(data, filename, opts)
             extra_headers = {}
     except ValueError as exc:
         raise HTTPException(status_code=415, detail=str(exc))
     except Exception as exc:
-        log.exception("hairify failed: %s", exc.__class__.__name__)
+        log.exception("strand failed: %s", exc.__class__.__name__)
         raise HTTPException(status_code=500, detail="Processing failed.")
 
-    log.info("hairify %s %s seed=%s -> %d bytes", suffix, intensity, opts.seed, len(out))
+    log.info("strand %s %s seed=%s -> %d bytes", suffix, intensity, opts.seed, len(out))
 
     content_type = _OUTPUT_CONTENT_TYPES.get(suffix, "application/octet-stream")
     download_name = _apply_suffix(filename, clean_suffix)
@@ -199,9 +199,9 @@ async def hairify(
         "Content-Disposition": f'attachment; filename="{download_name}"',
         "Content-Length": str(len(out)),
         "Cache-Control": "no-store",
-        "X-Hairify-Seed": str(opts.seed),
+        "X-Strand-Seed": str(opts.seed),
         "Access-Control-Expose-Headers":
-            "Content-Disposition, X-Hairify-Seed, X-Hairify-Haired, X-Hairify-Skipped, X-Hairify-Errored",
+            "Content-Disposition, X-Strand-Seed, X-Strand-Haired, X-Strand-Skipped, X-Strand-Errored",
         **extra_headers,
     }
     return StreamingResponse(io.BytesIO(out), media_type=content_type, headers=headers)

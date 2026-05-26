@@ -14,8 +14,8 @@ from PIL import Image
 from app.core import (
     INTENSITY_TIERS,
     InjectOptions,
-    hairify_bytes,
-    hairify_zip_bytes,
+    strand_bytes,
+    strand_zip_bytes,
     inject_image_bytes,
     inject_pdf_bytes,
     inject_pptx_bytes,
@@ -145,15 +145,15 @@ def test_inject_pptx_roundtrip(pptx_bytes):
     assert len(prs.slides) == 3
 
 
-def test_hairify_bytes_dispatches_by_suffix(png_bytes, pdf_bytes):
+def test_strand_bytes_dispatches_by_suffix(png_bytes, pdf_bytes):
     opts = InjectOptions(seed=5)
-    assert hairify_bytes(png_bytes, "photo.png", opts) != png_bytes
-    assert hairify_bytes(pdf_bytes, "deck.pdf", opts) != pdf_bytes
+    assert strand_bytes(png_bytes, "photo.png", opts) != png_bytes
+    assert strand_bytes(pdf_bytes, "deck.pdf", opts) != pdf_bytes
 
 
-def test_hairify_bytes_rejects_unsupported():
+def test_strand_bytes_rejects_unsupported():
     with pytest.raises(ValueError):
-        hairify_bytes(b"hello", "notes.txt", InjectOptions())
+        strand_bytes(b"hello", "notes.txt", InjectOptions())
 
 
 def test_seed_is_deterministic(png_bytes):
@@ -180,18 +180,18 @@ def test_health(client):
 def test_index_serves_html(client):
     r = client.get("/")
     assert r.status_code == 200
-    assert "Hairify" in r.text
+    assert "Strand" in r.text
 
 
-def test_hairify_endpoint_png(client, png_bytes):
+def test_strand_endpoint_png(client, png_bytes):
     r = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("photo.png", png_bytes, "image/png")},
         data={"palette": "dark", "intensity": "normal"},
     )
     assert r.status_code == 200
     assert r.headers["content-type"] == "image/png"
-    assert "photo-haired.png" in r.headers.get("content-disposition", "")
+    assert "photo-strand.png" in r.headers.get("content-disposition", "")
     assert len(r.content) > 0
     # Confirm the response decodes as a valid PNG.
     with Image.open(io.BytesIO(r.content)) as im:
@@ -199,18 +199,18 @@ def test_hairify_endpoint_png(client, png_bytes):
         assert im.format == "PNG"
 
 
-def test_hairify_endpoint_rejects_unsupported(client):
+def test_strand_endpoint_rejects_unsupported(client):
     r = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("notes.txt", b"hello", "text/plain")},
         data={"palette": "dark", "intensity": "normal"},
     )
     assert r.status_code == 415
 
 
-def test_hairify_endpoint_rejects_empty(client):
+def test_strand_endpoint_rejects_empty(client):
     r = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("photo.png", b"", "image/png")},
         data={"palette": "dark", "intensity": "normal"},
     )
@@ -287,7 +287,7 @@ def zip_bytes(png_bytes, pdf_bytes, pptx_bytes) -> bytes:
 def test_zip_roundtrip_processes_each_supported_entry(zip_bytes):
     import zipfile
     opts = options_from_ui(palette="dark", intensity="normal", seed=42)
-    out, report = hairify_zip_bytes(zip_bytes, opts, name_suffix="-haired")
+    out, report = strand_zip_bytes(zip_bytes, opts, name_suffix="-strand")
 
     assert report["haired_count"] == 3
     assert report["skipped_count"] == 1
@@ -295,23 +295,23 @@ def test_zip_roundtrip_processes_each_supported_entry(zip_bytes):
 
     with zipfile.ZipFile(io.BytesIO(out)) as z:
         names = set(z.namelist())
-        assert "photo-haired.png" in names
-        assert "docs/deck-haired.pptx" in names
-        assert "docs/manual-haired.pdf" in names
+        assert "photo-strand.png" in names
+        assert "docs/deck-strand.pptx" in names
+        assert "docs/manual-strand.pdf" in names
         # Unsupported entries pass through unchanged with the original name.
         assert "README.txt" in names
         assert z.read("README.txt") == b"keep me as is\n"
         # Report is embedded.
-        assert "_hairify-report.txt" in names
-        report_text = z.read("_hairify-report.txt").decode("utf-8")
-        assert "Hairify report" in report_text
+        assert "_strand-report.txt" in names
+        report_text = z.read("_strand-report.txt").decode("utf-8")
+        assert "Strand report" in report_text
         assert "seed:" in report_text
 
 
 def test_zip_custom_suffix(zip_bytes):
     import zipfile
     opts = options_from_ui(palette="dark", intensity="subtle", seed=99)
-    out, _ = hairify_zip_bytes(zip_bytes, opts, name_suffix=".v2")
+    out, _ = strand_zip_bytes(zip_bytes, opts, name_suffix=".v2")
     with zipfile.ZipFile(io.BytesIO(out)) as z:
         assert "photo.v2.png" in z.namelist()
         assert "docs/deck.v2.pptx" in z.namelist()
@@ -320,36 +320,36 @@ def test_zip_custom_suffix(zip_bytes):
 def test_zip_empty_suffix_keeps_names(zip_bytes):
     import zipfile
     opts = options_from_ui(palette="dark", intensity="subtle", seed=99)
-    out, _ = hairify_zip_bytes(zip_bytes, opts, name_suffix="")
+    out, _ = strand_zip_bytes(zip_bytes, opts, name_suffix="")
     with zipfile.ZipFile(io.BytesIO(out)) as z:
         assert "photo.png" in z.namelist()
         # Content still changed.
         assert z.read("photo.png") != z.read("photo.png")[:0] + b""  # not empty
-        assert "_hairify-report.txt" in z.namelist()
+        assert "_strand-report.txt" in z.namelist()
 
 
 # --- HTTP layer for the new surface ------------------------------------------
 
 def test_seed_header_is_echoed(client, png_bytes):
     r = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("photo.png", png_bytes, "image/png")},
         data={"palette": "dark", "intensity": "normal"},
     )
     assert r.status_code == 200
-    seed = r.headers.get("X-Hairify-Seed")
+    seed = r.headers.get("X-Strand-Seed")
     assert seed is not None and seed.isdigit()
 
 
 def test_seed_reuse_reproduces_output(client, png_bytes):
     r1 = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("photo.png", png_bytes, "image/png")},
         data={"palette": "dark", "intensity": "normal"},
     )
-    seed = r1.headers["X-Hairify-Seed"]
+    seed = r1.headers["X-Strand-Seed"]
     r2 = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("photo.png", png_bytes, "image/png")},
         data={"palette": "dark", "intensity": "normal", "seed": seed},
     )
@@ -359,7 +359,7 @@ def test_seed_reuse_reproduces_output(client, png_bytes):
 
 def test_custom_suffix_in_content_disposition(client, png_bytes):
     r = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("photo.png", png_bytes, "image/png")},
         data={"palette": "dark", "intensity": "subtle", "name_suffix": ".v2"},
     )
@@ -369,7 +369,7 @@ def test_custom_suffix_in_content_disposition(client, png_bytes):
 
 def test_empty_suffix_keeps_original_name(client, png_bytes):
     r = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("photo.png", png_bytes, "image/png")},
         data={"palette": "dark", "intensity": "subtle", "name_suffix": ""},
     )
@@ -379,7 +379,7 @@ def test_empty_suffix_keeps_original_name(client, png_bytes):
 
 def test_suffix_strips_path_separators(client, png_bytes):
     r = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("photo.png", png_bytes, "image/png")},
         data={"palette": "dark", "intensity": "subtle", "name_suffix": "../oops"},
     )
@@ -392,16 +392,16 @@ def test_suffix_strips_path_separators(client, png_bytes):
 def test_zip_endpoint_roundtrip(client, zip_bytes):
     import zipfile
     r = client.post(
-        "/hairify",
+        "/strand",
         files={"file": ("bundle.zip", zip_bytes, "application/zip")},
         data={"palette": "dark", "intensity": "normal"},
     )
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/zip"
-    assert "bundle-haired.zip" in r.headers["content-disposition"]
-    assert r.headers.get("X-Hairify-Haired") == "3"
-    assert r.headers.get("X-Hairify-Skipped") == "1"
+    assert "bundle-strand.zip" in r.headers["content-disposition"]
+    assert r.headers.get("X-Strand-Haired") == "3"
+    assert r.headers.get("X-Strand-Skipped") == "1"
 
     with zipfile.ZipFile(io.BytesIO(r.content)) as z:
-        assert "photo-haired.png" in z.namelist()
-        assert "_hairify-report.txt" in z.namelist()
+        assert "photo-strand.png" in z.namelist()
+        assert "_strand-report.txt" in z.namelist()

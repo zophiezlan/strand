@@ -1,15 +1,15 @@
 """
-Core hair rendering and bytes-based injectors for the Hairify web service.
+Core hair rendering and bytes-based injectors for Strand.
 
-The pure functions (Bezier rendering, palettes, content-region detection, placement)
-are lifted from the original `haired.py` CLI with no behavioural changes. The
+Shared by the FastAPI web service (`app.main`) and the CLI (`app.cli`). The
 public API is:
 
     InjectOptions       — request-level knobs
-    hairify_bytes(...)  — dispatch on filename / content type
+    strand_bytes(...)   — dispatch on filename / content type
+    strand_zip_bytes(...) — walk a zip, strand each supported entry
     inject_image_bytes(...), inject_pdf_bytes(...), inject_pptx_bytes(...)
 
-Everything operates on bytes / BytesIO. Nothing touches the disk.
+Everything operates on bytes / BytesIO. Nothing in this module touches the disk.
 """
 
 from __future__ import annotations
@@ -293,7 +293,7 @@ DEFAULT_INTENSITY = "normal"
 
 @dataclass
 class InjectOptions:
-    """Request-level knobs for a single hairify call."""
+    """Request-level knobs for a single strand call."""
     # Per-page/slide probability for PDFs and pptx. For images, see image_count.
     rate: float = 0.5
     # Hairs per *selected* PDF page or pptx slide.
@@ -305,7 +305,7 @@ class InjectOptions:
     scale_range: tuple[float, float] = (0.15, 0.45)
     loop_chance: float = 0.18
     # Always populated after construction (see __post_init__) so callers can
-    # echo the seed back to the user for "re-hairify with this seed".
+    # echo the seed back to the user for "re-strand with this seed".
     seed: int = field(default_factory=lambda: random.randrange(1, 2**31 - 1))
 
     def __post_init__(self):
@@ -467,7 +467,7 @@ def _suffix_of(name: str) -> str:
     return ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
 
 
-def hairify_bytes(data: bytes, filename: str, opts: InjectOptions) -> bytes:
+def strand_bytes(data: bytes, filename: str, opts: InjectOptions) -> bytes:
     """Dispatch to the right injector based on filename suffix."""
     suffix = _suffix_of(filename)
     if suffix in IMAGE_SUFFIXES:
@@ -489,16 +489,16 @@ def _apply_suffix(name: str, suffix: str) -> str:
     return f"{name}{suffix}"
 
 
-def hairify_zip_bytes(
+def strand_zip_bytes(
     data: bytes,
     opts: InjectOptions,
-    name_suffix: str = "-haired",
+    name_suffix: str = "-strand",
 ) -> tuple[bytes, dict]:
     """
-    Walk every entry in a zip, hairify supported files, return (zip_bytes, report).
+    Walk every entry in a zip, strand supported files, return (zip_bytes, report).
 
     Each entry's status is one of: "hairified", "skipped", "errored". A
-    `_hairify-report.txt` is added to the output zip alongside the entries.
+    `_strand-report.txt` is added to the output zip alongside the entries.
     Directory entries are preserved as-is.
     """
     import zipfile
@@ -520,7 +520,7 @@ def hairify_zip_bytes(
         for idx, info in enumerate(infos):
             name = info.filename
             # Skip our own report from a previous round-trip, and macOS metadata.
-            if name == "_hairify-report.txt" or name.startswith("__MACOSX/"):
+            if name == "_strand-report.txt" or name.startswith("__MACOSX/"):
                 continue
             if info.is_dir():
                 zout.writestr(info, b"")
@@ -565,7 +565,7 @@ def hairify_zip_bytes(
 
             try:
                 raw = zin.read(info)
-                processed = hairify_bytes(raw, name, entry_opts)
+                processed = strand_bytes(raw, name, entry_opts)
             except Exception as exc:
                 report["error_count"] += 1
                 report["entries"].append({
@@ -583,7 +583,7 @@ def hairify_zip_bytes(
             })
 
         # Write the report as the last entry.
-        zout.writestr("_hairify-report.txt", _format_zip_report(report, opts))
+        zout.writestr("_strand-report.txt", _format_zip_report(report, opts))
 
     return out_buf.getvalue(), report
 
@@ -591,7 +591,7 @@ def hairify_zip_bytes(
 def _format_zip_report(report: dict, opts: InjectOptions) -> str:
     from datetime import datetime, timezone
     lines = [
-        "Hairify report",
+        "Strand report",
         f"generated: {datetime.now(timezone.utc).isoformat(timespec='seconds')}",
         f"seed:      {report['seed']}",
         f"palette:   {opts.palette}",

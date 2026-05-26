@@ -1,11 +1,11 @@
 [project]
-name = "hairify"
+name = "strand"
 version = "0.1.0"
 description = "A novelty filter that drops procedural hairs onto images, PDFs, and pptx files."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "Hairify" }]
+authors = [{ name = "Strand" }]
 
 dependencies = [
   "fastapi>=0.115,<1.0",
@@ -25,7 +25,7 @@ dev = [
 ]
 
 [project.scripts]
-hairify = "app.cli:main"
+strand = "app.cli:main"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

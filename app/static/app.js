@@ -15,7 +15,7 @@
   const IMAGE_SUFFIXES = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]);
   const SUPPORTED = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".pdf", ".pptx", ".zip"];
   const MAX_BYTES = 25 * 1024 * 1024;
-  const DEFAULT_SUFFIX = "-haired";
+  const DEFAULT_SUFFIX = "-strand";
 
   let currentFile = null;
   let palette = "dark";
@@ -117,7 +117,7 @@
     rerollNewBtn.disabled = true;
     previewEl.hidden = true;
     zipSummaryEl.hidden = true;
-    showWorking("Hairifying");
+    showWorking("Stranding");
 
     try {
       const form = new FormData();
@@ -136,7 +136,7 @@
         form.append("name_suffix", "");
       }
 
-      const res = await fetch("/hairify", { method: "POST", body: form });
+      const res = await fetch("/strand", { method: "POST", body: form });
 
       if (!res.ok) {
         let detail = `Server returned ${res.status}.`;
@@ -148,15 +148,15 @@
         return;
       }
 
-      const echoedSeed = res.headers.get("X-Hairify-Seed");
+      const echoedSeed = res.headers.get("X-Strand-Seed");
       if (echoedSeed) {
         lastSeed = echoedSeed;
         seedValueEl.textContent = echoedSeed;
       }
 
-      const haired = res.headers.get("X-Hairify-Haired");
-      const skipped = res.headers.get("X-Hairify-Skipped");
-      const errored = res.headers.get("X-Hairify-Errored");
+      const haired = res.headers.get("X-Strand-Haired");
+      const skipped = res.headers.get("X-Strand-Skipped");
+      const errored = res.headers.get("X-Strand-Errored");
       const isZipResponse = haired != null || skipped != null;
 
       const blob = await res.blob();
@@ -172,7 +172,7 @@
         if (skipped && Number(skipped) > 0) parts.push(`${skipped} skipped`);
         if (errored && Number(errored) > 0) parts.push(`${errored} errored`);
         zipSummaryEl.innerHTML = parts.join(" · ") +
-          ` &nbsp;·&nbsp; see <code>_hairify-report.txt</code> inside the zip.`;
+          ` &nbsp;·&nbsp; see <code>_strand-report.txt</code> inside the zip.`;
         zipSummaryEl.hidden = false;
         showInfo("Done — your hairified zip is downloading.");
       } else if (IMAGE_SUFFIXES.has(suffix)) {
@@ -203,7 +203,7 @@
     const m = cd.match(/filename="?([^"]+)"?/);
     if (m) return m[1];
     const i = fallback.lastIndexOf(".");
-    return i < 0 ? `${fallback}-haired` : `${fallback.slice(0, i)}-haired${fallback.slice(i)}`;
+    return i < 0 ? `${fallback}-strand` : `${fallback.slice(0, i)}-strand${fallback.slice(i)}`;
   }
 
   function triggerDownload(blob, name) {

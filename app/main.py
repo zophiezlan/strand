@@ -12,7 +12,7 @@ import logging
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, Form, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -23,6 +23,8 @@ from .core import (
     SUPPORTED_INCLUDING_ZIP,
     SUPPORTED_SUFFIXES,
     ZIP_SUFFIXES,
+    _apply_suffix,
+    _suffix_of,
     strand_bytes,
     strand_zip_bytes,
     options_from_ui,
@@ -93,10 +95,6 @@ _MAX_SUFFIX_LEN = 32
 _DEFAULT_SUFFIX = "-strand"
 
 
-def _suffix_of(name: str) -> str:
-    return ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
-
-
 def _sanitize_name_suffix(raw) -> str:
     """User-supplied download suffix. Empty string is allowed (= no suffix).
 
@@ -114,15 +112,6 @@ def _sanitize_name_suffix(raw) -> str:
 
 
 _ABSENT = object()
-
-
-def _apply_suffix(name: str, suffix: str) -> str:
-    if not suffix:
-        return name
-    if "." in name:
-        stem, _, ext = name.rpartition(".")
-        return f"{stem}{suffix}.{ext}"
-    return f"{name}{suffix}"
 
 
 def _parse_seed(raw: str | None) -> int | None:

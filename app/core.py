@@ -819,6 +819,9 @@ def strand_zip_bytes(
                 content_bias=opts.content_bias,
                 scale_range=opts.scale_range,
                 loop_chance=opts.loop_chance,
+                eyelash_chance=opts.eyelash_chance,
+                fragment_chance=opts.fragment_chance,
+                cluster_chance=opts.cluster_chance,
                 seed=per_entry_seed,
             )
 

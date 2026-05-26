@@ -12,6 +12,7 @@
   const rerollSameBtn = document.getElementById("reroll-same");
   const rerollNewBtn = document.getElementById("reroll-new");
   const downloadBtn = document.getElementById("download");
+  const compareBtn = document.getElementById("compare");
   const zipSummaryEl = document.getElementById("zip-summary");
   const statsEl = document.getElementById("stats");
   const statsLineEl = document.getElementById("stats-line");
@@ -36,6 +37,9 @@
   let lastResultBlob = null;
   let lastResultName = null;
   let lastPreviewUrl = null;  // separate object URL for inline preview img
+  /** Object URL for the original (un-haired) upload, used by the hold-to-
+      peek Compare button. Only populated for single-image responses. */
+  let lastOriginalUrl = null;
 
   // --- Chip selectors ---
   for (const group of ["palette", "intensity"]) {
@@ -179,10 +183,15 @@
     previewEl.hidden = true;
     zipSummaryEl.hidden = true;
     statsEl.hidden = true;
+    compareBtn.hidden = true;
     // Discard any prior result + preview URL before starting fresh.
     if (lastPreviewUrl) {
       URL.revokeObjectURL(lastPreviewUrl);
       lastPreviewUrl = null;
+    }
+    if (lastOriginalUrl) {
+      URL.revokeObjectURL(lastOriginalUrl);
+      lastOriginalUrl = null;
     }
     lastResultBlob = null;
     lastResultName = null;
@@ -260,8 +269,12 @@
         showInfo("Done — your zip's ready.");
       } else if (previewSingleImage) {
         lastPreviewUrl = URL.createObjectURL(blob);
+        // Stash an object URL for the original upload so the Compare button
+        // can flip the preview back to "before" while the user holds it.
+        lastOriginalUrl = URL.createObjectURL(singleFile);
         previewImg.src = lastPreviewUrl;
         previewEl.hidden = false;
+        compareBtn.hidden = false;
         showInfo("Done. How does it look?");
       } else {
         showInfo("Done — ready when you are.");
@@ -285,6 +298,35 @@
     }
   });
 
+  // Hold-to-peek compare: while pointer is down, swap to the original; on
+  // release (or if the pointer leaves the button or window blurs), swap back.
+  // Single pointerdown/up handler covers mouse, touch, and pen.
+  function startPeek(e) {
+    if (compareBtn.hidden || !lastOriginalUrl || !lastPreviewUrl) return;
+    e.preventDefault();
+    previewImg.src = lastOriginalUrl;
+    compareBtn.classList.add("peeking");
+    compareBtn.textContent = "Showing original";
+  }
+  function endPeek() {
+    if (!compareBtn.classList.contains("peeking")) return;
+    previewImg.src = lastPreviewUrl;
+    compareBtn.classList.remove("peeking");
+    compareBtn.textContent = "Hold to compare";
+  }
+  compareBtn.addEventListener("pointerdown", startPeek);
+  compareBtn.addEventListener("pointerup", endPeek);
+  compareBtn.addEventListener("pointerleave", endPeek);
+  compareBtn.addEventListener("pointercancel", endPeek);
+  window.addEventListener("blur", endPeek);
+  // Keyboard accessibility — Space/Enter on a focused button mimic mouse.
+  compareBtn.addEventListener("keydown", (e) => {
+    if (e.key === " " || e.key === "Enter") { e.preventDefault(); startPeek(e); }
+  });
+  compareBtn.addEventListener("keyup", (e) => {
+    if (e.key === " " || e.key === "Enter") { endPeek(); }
+  });
+
   function renderStats(headerValue) {
     if (!headerValue) { statsEl.hidden = true; return; }
     let s;
@@ -297,6 +339,9 @@
     const clusters = s.clusters || 0;
     const morphs = entriesByCount(s.morphologies || {});
     const palettes = entriesByCount(s.palettes || {});
+    const lengths = s.hair_lengths_cm || [];
+    const contentHits = s.content_hits || 0;
+    const substrate = s.substrate;
 
     const lines = [];
 
@@ -306,8 +351,7 @@
     if (clusters > 0) totalsBits.push(`in ${clusters} ${pluralize("clump", clusters)}`);
     lines.push(totalsBits.join(" ") + ".");
 
-    // Line 2: morphology breakdown. Omit when only one morphology was drawn
-    // (the count is already implied by the total).
+    // Line 2: morphology breakdown. Omit when only one morphology was drawn.
     if (morphs.length === 1 && morphs[0][1] === total) {
       lines.push(`Type: ${pluralize(morphs[0][0], total)}.`);
     } else if (morphs.length > 1) {
@@ -315,8 +359,7 @@
       lines.push(`Types: ${parts.join(", ")}.`);
     }
 
-    // Line 3: colour breakdown. Singular palette → "Colour: white."
-    // Mixed result → "Colours: 3 dark, 2 blonde, 1 grey."
+    // Line 3: colour breakdown.
     if (palettes.length === 1) {
       lines.push(`Colour: ${palettes[0][0]}.`);
     } else if (palettes.length > 1) {
@@ -324,10 +367,60 @@
       lines.push(`Colours: ${parts.join(", ")}.`);
     }
 
+    // Line 4: physical hair lengths. Concrete proof the cm-sizing is real.
+    // For a single hair we just show its length; for many, show range + median.
+    if (lengths.length === 1) {
+      lines.push(`Length: ${lengths[0].toFixed(1)} cm.`);
+    } else if (lengths.length > 1) {
+      const sorted = [...lengths].sort((a, b) => a - b);
+      const min = sorted[0];
+      const max = sorted[sorted.length - 1];
+      const median = sorted[Math.floor(sorted.length / 2)];
+      lines.push(`Lengths: ${min.toFixed(1)}–${max.toFixed(1)} cm (median ${median.toFixed(1)}).`);
+    }
+
+    // Line 5: how many landed on detected content vs blank margin.
+    // Buddies don't roll their own content bias, so the denominator is
+    // primary hairs only — total minus buddies (= total - extras-from-clusters).
+    // Approximation: hairs minus (cluster contributions). We don't track
+    // buddies-per-cluster individually, so use total as the denominator and
+    // surface it as a rate.
+    if (total > 1 && contentHits > 0) {
+      lines.push(`${contentHits} of ${total} landed on content.`);
+    }
+
+    // Line 6: substrate — physical dimensions of the file we just haired.
+    if (substrate) {
+      const nat = `${formatNative(substrate)}`;
+      const cm = `${substrate.width_cm} × ${substrate.height_cm} cm`;
+      const extra = substrate.page_count ? ` · ${substrate.page_count} pages`
+                  : substrate.slide_count ? ` · ${substrate.slide_count} slides`
+                  : "";
+      lines.push(`Substrate: ${nat} (≈${cm})${extra}.`);
+    }
+
     statsLineEl.innerHTML = lines
       .map((l) => `<span class="stats-line">${escapeHtml(l)}</span>`)
       .join("");
     statsEl.hidden = false;
+  }
+
+  function formatNative(substrate) {
+    const u = substrate.native_unit;
+    if (u === "px") {
+      const dpi = substrate.dpi ? ` @ ${substrate.dpi} dpi` : "";
+      return `${substrate.width_native} × ${substrate.height_native} px${dpi}`;
+    }
+    if (u === "pt") {
+      return `${substrate.width_native} × ${substrate.height_native} pt`;
+    }
+    if (u === "EMU") {
+      // EMU values are huge — show as inches for human readability.
+      const wIn = (substrate.width_native / 914400).toFixed(2);
+      const hIn = (substrate.height_native / 914400).toFixed(2);
+      return `${wIn} × ${hIn} in`;
+    }
+    return `${substrate.width_native} × ${substrate.height_native} ${u}`;
   }
 
   function entriesByCount(obj) {

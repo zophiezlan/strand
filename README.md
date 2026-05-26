@@ -19,8 +19,12 @@ Two front-ends, one rendering engine:
 - Generates each hair as a Bezier curve with 4× supersampling, taper, and
   per-pixel colour jitter — so they read as physical strands rather than
   drawn lines.
-- Four morphologies mixed by default: curved strand, laminated loop with
-  tail, eyelash (short tight curl), and fragment (short wispy piece).
+- Five morphologies mixed by default: curved strand, laminated loop with
+  tail, eyelash (short tight curl), fragment (short wispy piece), and the
+  occasional kink (tight zigzag, body-hair vibe).
+- ~18% of shed strands carry a tiny dark follicle bulb at one end — the
+  "club" root that fell out with the hair. Single most diagnostic "yep,
+  that's a real hair" detail.
 - Seven palettes: **Dark / Brown / Blonde / Red / Grey / White / Mixed**.
 - Six density tiers: **Subtle / Normal / Heavy / Hirsute / Werewolf / Cousin Itt**.
   The last three are the joke — every page gets multiple hairs.

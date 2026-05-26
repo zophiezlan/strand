@@ -55,6 +55,25 @@ PALETTES = {
 }
 PALETTE_NAMES = set(PALETTES) | {"mixed"}
 
+# Per-palette stroke width scaling. A real hair is ~80 µm wide — sub-pixel at
+# typical DPI — so any visible thickness is already a perceptual lie. White
+# hair on white paper has near-zero contrast so the eye doesn't measure its
+# width; dark hair has high contrast and every pixel of thickness reads as
+# "drawn line" instead of "scanned hair". This table damps darker palettes
+# down toward sub-pixel territory so they feel like strands, not strokes.
+PALETTE_WIDTH_SCALE: dict[str, float] = {
+    "dark":   0.55,
+    "brown":  0.65,
+    "red":    0.65,
+    "blonde": 0.75,
+    "grey":   0.75,
+    "white":  1.00,
+}
+
+
+def _palette_width_scale(palette: str) -> float:
+    return PALETTE_WIDTH_SCALE.get(palette, 1.0)
+
 
 def _random_hair_color(rng, palette="dark"):
     if palette == "mixed":
@@ -65,11 +84,57 @@ def _random_hair_color(rng, palette="dark"):
             rng.randint(lo[2], hi[2]))
 
 
-def _draw_bezier_segment(draw, p0, p1, p2, p3, base_color, rng,
-                         n_samples=220, width_start=1.9, width_end=1.0):
-    points = [_cubic_bezier(i / (n_samples - 1), p0, p1, p2, p3) for i in range(n_samples)]
-    for i in range(len(points) - 1):
-        t = i / (n_samples - 1)
+# Probability that a strand gets a follicle bulb at one end. Real shed hair
+# often has a tiny darker "club" root at the end that fell out — it's the
+# single most diagnostic "yep, real hair" detail. Eyelashes get a lower
+# chance (eyelashes are rarely shed root-and-all in everyday context); broken
+# fragments never get one (a broken-mid-shaft end isn't a root).
+_FOLLICLE_CHANCE = 0.18
+_FOLLICLE_CHANCE_EYELASH = 0.10
+
+
+def _draw_follicle(draw, position, base_color, rng, width_scale=1.0):
+    """Composite a small dark bulb at `position` to suggest a hair follicle root.
+
+    `position` is in canvas coordinates (already supersampled). The bulb is a
+    short oval, ~2× the local strand width, in a colour darker than the
+    strand. Scaled by `width_scale` so dark/thin palettes don't get a chunky
+    contrast-grabbing dot.
+    """
+    # Darken the strand colour by 50% — visible without being a black blob.
+    r = max(0, int(base_color[0] * 0.45))
+    g = max(0, int(base_color[1] * 0.45))
+    b = max(0, int(base_color[2] * 0.45))
+    a = rng.randint(220, 245)
+
+    # Bulb radius in final-image px scaled to the supersample canvas.
+    radius = (rng.uniform(1.8, 2.6) * width_scale) * _SCALE
+    # Slight asymmetry so it reads as an oval, not a perfect circle.
+    rx = radius * rng.uniform(1.0, 1.25)
+    ry = radius * rng.uniform(0.8, 1.0)
+    cx, cy = position
+    draw.ellipse(
+        [cx - rx, cy - ry, cx + rx, cy + ry],
+        fill=(r, g, b, a),
+    )
+
+
+def _draw_strand_polyline(draw, points, base_color, rng,
+                          width_start=1.9, width_end=1.0, width_scale=1.0):
+    """Draw a strand following an arbitrary polyline of canvas-coord points.
+
+    Width tapers from `width_start` to `width_end` along the polyline with a
+    small per-segment jitter; colour gets per-pixel jitter so the strand reads
+    as a real photographed object rather than a vector stroke. Shared by the
+    bezier-based morphologies and the kink (sine-modulated polyline) one.
+    """
+    width_start *= width_scale
+    width_end *= width_scale
+    n = len(points) - 1
+    if n <= 0:
+        return
+    for i in range(n):
+        t = i / n
         w = (width_start - t * (width_start - width_end) + rng.uniform(-0.15, 0.15)) * _SCALE
         w = max(_SCALE * 0.5, w)
 
@@ -79,6 +144,15 @@ def _draw_bezier_segment(draw, p0, p1, p2, p3, base_color, rng,
         a = rng.randint(220, 250)
 
         draw.line([points[i], points[i + 1]], fill=(r, g, b, a), width=int(round(w)))
+
+
+def _draw_bezier_segment(draw, p0, p1, p2, p3, base_color, rng,
+                         n_samples=220, width_start=1.9, width_end=1.0,
+                         width_scale=1.0):
+    points = [_cubic_bezier(i / (n_samples - 1), p0, p1, p2, p3) for i in range(n_samples)]
+    _draw_strand_polyline(draw, points, base_color, rng,
+                          width_start=width_start, width_end=width_end,
+                          width_scale=width_scale)
 
 
 def _finalize(img, cw, ch):
@@ -106,8 +180,12 @@ def _generate_curve_hair(rng, palette="dark", base_width=400, base_height=120):
     )
 
     base_color = _random_hair_color(rng, palette)
+    ws = _palette_width_scale(palette)
     _draw_bezier_segment(draw, p0, p1, p2, p3, base_color, rng,
-                         n_samples=220, width_start=1.9, width_end=1.0)
+                         n_samples=220, width_start=1.9, width_end=1.0,
+                         width_scale=ws)
+    if rng.random() < _FOLLICLE_CHANCE:
+        _draw_follicle(draw, rng.choice([p0, p3]), base_color, rng, width_scale=ws)
     return _finalize(img, cw, ch)
 
 
@@ -135,12 +213,14 @@ def _generate_loop_hair(rng, palette="dark", base_width=400, base_height=240):
     p2_local = (b_local[0] + k * tan_b[0], b_local[1] + k * tan_b[1])
 
     base_color = _random_hair_color(rng, palette)
+    ws = _palette_width_scale(palette)
     _draw_bezier_segment(
         draw,
         _to_canvas(*a_local), _to_canvas(*p1_local),
         _to_canvas(*p2_local), _to_canvas(*b_local),
         base_color, rng,
         n_samples=200, width_start=1.4, width_end=1.4,
+        width_scale=ws,
     )
 
     exit_dx = b_local[0] - p2_local[0]
@@ -162,7 +242,12 @@ def _generate_loop_hair(rng, palette="dark", base_width=400, base_height=240):
         _to_canvas(*t_p2_local), _to_canvas(*t_end_local),
         base_color, rng,
         n_samples=140, width_start=1.4, width_end=0.9,
+        width_scale=ws,
     )
+    if rng.random() < _FOLLICLE_CHANCE:
+        # Bulb sits at the trailing tail end — that's the "torn off the head"
+        # end of a shed strand; the loop is mid-shaft.
+        _draw_follicle(draw, _to_canvas(*t_end_local), base_color, rng, width_scale=ws)
 
     return _finalize(img, cw, ch)
 
@@ -189,8 +274,97 @@ def _generate_eyelash_hair(rng: random.Random, palette: str = "dark",
     p2 = _to_canvas(cx + span * 0.18, cy + arc * 0.85)
 
     base_color = _random_hair_color(rng, palette)
+    ws = _palette_width_scale(palette)
     _draw_bezier_segment(draw, p0, p1, p2, p3, base_color, rng,
-                         n_samples=120, width_start=1.9, width_end=1.0)
+                         n_samples=120, width_start=1.9, width_end=1.0,
+                         width_scale=ws)
+    if rng.random() < _FOLLICLE_CHANCE_EYELASH:
+        _draw_follicle(draw, rng.choice([p0, p3]), base_color, rng, width_scale=ws)
+    return _finalize(img, cw, ch)
+
+
+def _generate_kink_hair(rng: random.Random, palette: str = "dark",
+                        base_width: int = 400, base_height: int = 120) -> Image.Image:
+    """A tightly coiled hair — pubic / curly body-hair vibe.
+
+    Real curly hair has *three* scales of shape stacked:
+      • a wandering underlying path (the strand itself isn't laid out straight
+        on the surface — it wanders chaotically), modelled as a cubic bezier
+      • a slow curl along that path (the big "this is curly hair" arcs)
+      • a fast crimp riding on top (the tight zigzag texture)
+
+    The two sine modulations are offset perpendicular to the bezier's
+    *tangent* at each sample, so the kinks ride correctly on the curving
+    underlying path rather than along a fixed axis. Both modulations are
+    bell-enveloped at the ends so the strand doesn't appear cut off.
+    """
+    img, draw, cw, ch = _new_canvas(base_width, base_height)
+
+    cx_start = base_width * rng.uniform(0.08, 0.18)
+    cx_end = base_width * rng.uniform(0.78, 0.92)
+    cy_mid = base_height * 0.5
+    cy_start = cy_mid + rng.uniform(-base_height * 0.20, base_height * 0.20)
+    cy_end = cy_mid + rng.uniform(-base_height * 0.20, base_height * 0.20)
+
+    # Wacky primary path: cubic bezier with control points that can swing
+    # ±35% of base_height off the midline, so the underlying strand wanders.
+    p0 = (cx_start, cy_start)
+    p3 = (cx_end, cy_end)
+    span_x = cx_end - cx_start
+    p1 = (cx_start + span_x * rng.uniform(0.20, 0.40),
+          cy_mid + rng.uniform(-base_height * 0.35, base_height * 0.35))
+    p2 = (cx_start + span_x * rng.uniform(0.60, 0.80),
+          cy_mid + rng.uniform(-base_height * 0.35, base_height * 0.35))
+
+    # Approximate arc length of the bezier so sine amplitudes scale to the
+    # actual path length, not the straight-line distance between endpoints.
+    coarse = [_cubic_bezier(k / 24, p0, p1, p2, p3) for k in range(25)]
+    arc_len = sum(math.hypot(coarse[k + 1][0] - coarse[k][0],
+                             coarse[k + 1][1] - coarse[k][1])
+                  for k in range(24)) or 1.0
+
+    # Slow curl along the wandering path.
+    slow_cycles = rng.uniform(0.6, 1.6)
+    slow_amp = arc_len * rng.uniform(0.10, 0.18)
+    slow_phase = rng.uniform(0.0, math.tau)
+
+    # Fast crimp on top.
+    fast_cycles = rng.uniform(5.0, 9.0)
+    fast_amp = arc_len * rng.uniform(0.035, 0.075)
+    fast_phase = rng.uniform(0.0, math.tau)
+
+    n_samples = 280
+    points = []
+    for i in range(n_samples):
+        t = i / (n_samples - 1)
+        # Point on bezier
+        bx, by = _cubic_bezier(t, p0, p1, p2, p3)
+        # Tangent (first derivative of cubic bezier)
+        mt = 1 - t
+        tx = (3 * mt * mt * (p1[0] - p0[0]) + 6 * mt * t * (p2[0] - p1[0])
+              + 3 * t * t * (p3[0] - p2[0]))
+        ty = (3 * mt * mt * (p1[1] - p0[1]) + 6 * mt * t * (p2[1] - p1[1])
+              + 3 * t * t * (p3[1] - p2[1]))
+        tlen = math.hypot(tx, ty) or 1.0
+        # Unit perpendicular to the tangent — the kinks ride sideways on the path
+        px_dir = -ty / tlen
+        py_dir = tx / tlen
+        # Bell envelope tapers amplitude at the ends.
+        env = math.sin(math.pi * t) ** 0.5
+        offset = (
+            slow_amp * env * math.sin(t * slow_cycles * math.tau + slow_phase)
+            + fast_amp * env * math.sin(t * fast_cycles * math.tau + fast_phase)
+        )
+        points.append(_to_canvas(bx + px_dir * offset, by + py_dir * offset))
+
+    base_color = _random_hair_color(rng, palette)
+    ws = _palette_width_scale(palette)
+    _draw_strand_polyline(draw, points, base_color, rng,
+                          width_start=1.6, width_end=0.9,
+                          width_scale=ws)
+    if rng.random() < _FOLLICLE_CHANCE:
+        _draw_follicle(draw, rng.choice([points[0], points[-1]]),
+                       base_color, rng, width_scale=ws)
     return _finalize(img, cw, ch)
 
 
@@ -213,7 +387,8 @@ def _generate_fragment_hair(rng: random.Random, palette: str = "dark",
     base_color = _random_hair_color(rng, palette)
     # Thinner than a full strand — fragments are wispy.
     _draw_bezier_segment(draw, p0, p1, p2, p3, base_color, rng,
-                         n_samples=110, width_start=1.4, width_end=0.7)
+                         n_samples=110, width_start=1.4, width_end=0.7,
+                         width_scale=_palette_width_scale(palette))
     return _finalize(img, cw, ch)
 
 
@@ -224,6 +399,7 @@ MORPHOLOGIES: dict[str, "callable"] = {
     "loop":     _generate_loop_hair,
     "eyelash":  _generate_eyelash_hair,
     "fragment": _generate_fragment_hair,
+    "kink":     _generate_kink_hair,
 }
 
 
@@ -236,6 +412,7 @@ MORPHOLOGY_LENGTH_CM: dict[str, tuple[float, float]] = {
     "loop":     (5.0, 18.0),
     "eyelash":  (0.7, 1.4),
     "fragment": (1.5, 4.0),
+    "kink":     (1.5, 4.0),     # pubic / tightly coiled body hair
 }
 
 # Substrate unit conversions per centimetre.
@@ -264,6 +441,7 @@ def generate_hair_with_morphology(
     loop_chance: float = 0.15,
     eyelash_chance: float = 0.08,
     fragment_chance: float = 0.08,
+    kink_chance: float = 0.06,
 ) -> tuple[Image.Image, str, str]:
     """Pick a morphology by weighted random choice; return (image, morphology, palette).
 
@@ -283,6 +461,9 @@ def generate_hair_with_morphology(
     elif r < loop_chance + eyelash_chance + fragment_chance:
         morph = "fragment"
         renderer = _generate_fragment_hair
+    elif r < loop_chance + eyelash_chance + fragment_chance + kink_chance:
+        morph = "kink"
+        renderer = _generate_kink_hair
     else:
         morph = "curve"
         renderer = _generate_curve_hair
@@ -302,12 +483,13 @@ def generate_hair(
     loop_chance: float = 0.15,
     eyelash_chance: float = 0.08,
     fragment_chance: float = 0.08,
+    kink_chance: float = 0.06,
 ) -> Image.Image:
     """Pick a morphology by weighted random choice; default is the curved strand."""
     img, _, _ = generate_hair_with_morphology(
         rng, palette=palette,
         loop_chance=loop_chance, eyelash_chance=eyelash_chance,
-        fragment_chance=fragment_chance,
+        fragment_chance=fragment_chance, kink_chance=kink_chance,
     )
     return img
 
@@ -317,13 +499,20 @@ def _empty_stats() -> dict:
 
     `palettes` and `morphologies` are dynamic maps of name → count.
     `clusters` counts primary hairs that grew at least one buddy.
+    `hair_lengths_cm` is appended to once per hair drawn (primary + buddy).
+    `content_hits` counts primary hairs that landed via the content-region bias.
+    `substrate` is set once per file (None inside the zip aggregate, since a
+    zip mixes multiple substrates).
     """
     return {
         "hairs": 0,
-        "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0},
+        "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0, "kink": 0},
         "palettes": {},
         "pages_touched": 0,
         "clusters": 0,
+        "hair_lengths_cm": [],
+        "content_hits": 0,
+        "substrate": None,
     }
 
 
@@ -336,10 +525,13 @@ def _merge_stats(into: dict, src: dict) -> None:
     into["hairs"] += src.get("hairs", 0)
     into["pages_touched"] += src.get("pages_touched", 0)
     into["clusters"] += src.get("clusters", 0)
+    into["content_hits"] += src.get("content_hits", 0)
+    into["hair_lengths_cm"].extend(src.get("hair_lengths_cm", []))
     for m, n in src.get("morphologies", {}).items():
         into["morphologies"][m] = into["morphologies"].get(m, 0) + n
     for p, n in src.get("palettes", {}).items():
         into["palettes"][p] = into["palettes"].get(p, 0) + n
+    # `substrate` deliberately stays None on the aggregate — a zip has many.
 
 
 def _rotate_hair(hair: Image.Image, rng: random.Random) -> Image.Image:
@@ -442,7 +634,7 @@ def _place(rng, container_w, container_h, hair_w, hair_h,
 
     x = max(0, min(container_w - dw, x))
     y = max(0, min(container_h - dh, y))
-    return x, y, dw, dh
+    return x, y, dw, dh, use_region
 
 
 def _morph_kwargs(opts) -> dict:
@@ -452,6 +644,7 @@ def _morph_kwargs(opts) -> dict:
         loop_chance=opts.loop_chance,
         eyelash_chance=opts.eyelash_chance,
         fragment_chance=opts.fragment_chance,
+        kink_chance=opts.kink_chance,
     )
 
 
@@ -524,6 +717,8 @@ class InjectOptions:
     loop_chance: float = 0.15
     eyelash_chance: float = 0.08
     fragment_chance: float = 0.08
+    # Pubic / body-hair morphology — low default so it's a surprise, not a theme.
+    kink_chance: float = 0.06
     # Probability that an already-placed hair gets a "buddy" placed nearby,
     # rolled repeatedly per hair (so a single hair can be the head of a small
     # tuft of 1–3). Real shed hair clumps; even spread looks artificial.
@@ -579,6 +774,18 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> tuple[b
     iw, ih = img.size
     regions = _image_content_regions(img)
     units_per_cm = _image_pixels_per_cm(img)
+    dpi_info = img.info.get("dpi")
+    dpi_value = int(round(min(_MAX_IMAGE_DPI, float(dpi_info[0])))) if (
+        dpi_info and isinstance(dpi_info, tuple) and dpi_info[0]
+    ) else _DEFAULT_DPI
+    stats["substrate"] = {
+        "width_native": iw,
+        "height_native": ih,
+        "native_unit": "px",
+        "dpi": dpi_value,
+        "width_cm": round(iw / units_per_cm, 1),
+        "height_cm": round(ih / units_per_cm, 1),
+    }
 
     for _ in range(max(1, opts.image_count)):
         hair, morph, color = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
@@ -587,9 +794,14 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> tuple[b
         stats["morphologies"][morph] += 1
         _bump(stats["palettes"], color)
         hw, hh = hair.size
-        x, y, dw, dh = _place(rng, iw, ih, hw, hh,
-                              MORPHOLOGY_LENGTH_CM[morph], units_per_cm,
-                              regions=regions, content_bias=opts.content_bias)
+        x, y, dw, dh, on_content = _place(
+            rng, iw, ih, hw, hh,
+            MORPHOLOGY_LENGTH_CM[morph], units_per_cm,
+            regions=regions, content_bias=opts.content_bias,
+        )
+        stats["hair_lengths_cm"].append(round(max(dw, dh) / units_per_cm, 2))
+        if on_content:
+            stats["content_hits"] += 1
         hair_sized = hair.resize((max(1, int(dw)), max(1, int(dh))), Image.LANCZOS)
         img.alpha_composite(hair_sized, (int(x), int(y)))
 
@@ -603,6 +815,7 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> tuple[b
             buddy_count += 1
             scale = rng.uniform(0.7, 1.0)
             bw, bh = max(1, int(dw * scale)), max(1, int(dh * scale))
+            stats["hair_lengths_cm"].append(round(max(bw, bh) / units_per_cm, 2))
             buddy = buddy.resize((bw, bh), Image.LANCZOS)
             img.alpha_composite(buddy, (int(bx), int(by)))
         if buddy_count > 0:
@@ -635,14 +848,27 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
         if page_count == 0:
             return data, stats
 
+        # Report the first page's dimensions as the substrate. Mixed-size PDFs
+        # are rare and we'd rather show one honest size than an "it varies".
+        first = doc[0]
+        stats["substrate"] = {
+            "width_native": round(first.rect.width, 1),
+            "height_native": round(first.rect.height, 1),
+            "native_unit": "pt",
+            "dpi": None,
+            "width_cm": round(first.rect.width / _POINTS_PER_CM, 1),
+            "height_cm": round(first.rect.height / _POINTS_PER_CM, 1),
+            "page_count": page_count,
+        }
+
         # Pick which pages get hair. Per-page Bernoulli with at-least-one guarantee
         # so a 2-page doc on subtle still gets visibly haired.
-        hit = [rng.random() < opts.rate for _ in range(page_count)]
-        if not any(hit):
-            hit[rng.randrange(page_count)] = True
+        page_hit = [rng.random() < opts.rate for _ in range(page_count)]
+        if not any(page_hit):
+            page_hit[rng.randrange(page_count)] = True
 
         per_page = max(1, opts.hairs_per_page)
-        for i, do_it in enumerate(hit):
+        for i, do_it in enumerate(page_hit):
             if not do_it:
                 continue
             stats["pages_touched"] += 1
@@ -657,9 +883,14 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
                 stats["morphologies"][morph] += 1
                 _bump(stats["palettes"], color)
                 hw, hh = hair.size
-                x, y, dw, dh = _place(rng, pw, ph, hw, hh,
-                                      MORPHOLOGY_LENGTH_CM[morph], _POINTS_PER_CM,
-                                      regions=regions, content_bias=opts.content_bias)
+                x, y, dw, dh, on_content = _place(
+                    rng, pw, ph, hw, hh,
+                    MORPHOLOGY_LENGTH_CM[morph], _POINTS_PER_CM,
+                    regions=regions, content_bias=opts.content_bias,
+                )
+                stats["hair_lengths_cm"].append(round(max(dw, dh) / _POINTS_PER_CM, 2))
+                if on_content:
+                    stats["content_hits"] += 1
 
                 buf = io.BytesIO()
                 hair.save(buf, format="PNG")
@@ -681,6 +912,7 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
                     buddy_count += 1
                     bs = rng.uniform(0.7, 1.0)
                     bw_, bh_ = dw * bs, dh * bs
+                    stats["hair_lengths_cm"].append(round(max(bw_, bh_) / _POINTS_PER_CM, 2))
                     bbuf = io.BytesIO()
                     buddy.save(bbuf, format="PNG")
                     page.insert_image(
@@ -712,12 +944,22 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
         prs.save(out)
         return out.getvalue(), stats
 
-    hit = [rng.random() < opts.rate for _ in slides]
-    if not any(hit):
-        hit[rng.randrange(len(slides))] = True
+    stats["substrate"] = {
+        "width_native": sw,
+        "height_native": sh,
+        "native_unit": "EMU",
+        "dpi": None,
+        "width_cm": round(sw / _EMU_PER_CM, 1),
+        "height_cm": round(sh / _EMU_PER_CM, 1),
+        "slide_count": len(slides),
+    }
+
+    slide_hit = [rng.random() < opts.rate for _ in slides]
+    if not any(slide_hit):
+        slide_hit[rng.randrange(len(slides))] = True
 
     per_slide = max(1, opts.hairs_per_page)
-    for slide, do_it in zip(slides, hit):
+    for slide, do_it in zip(slides, slide_hit):
         if not do_it:
             continue
         stats["pages_touched"] += 1
@@ -729,9 +971,14 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
             stats["morphologies"][morph] += 1
             _bump(stats["palettes"], color)
             hw, hh = hair.size
-            x, y, dw, dh = _place(rng, sw, sh, hw, hh,
-                                  MORPHOLOGY_LENGTH_CM[morph], _EMU_PER_CM,
-                                  regions=regions, content_bias=opts.content_bias)
+            x, y, dw, dh, on_content = _place(
+                rng, sw, sh, hw, hh,
+                MORPHOLOGY_LENGTH_CM[morph], _EMU_PER_CM,
+                regions=regions, content_bias=opts.content_bias,
+            )
+            stats["hair_lengths_cm"].append(round(max(dw, dh) / _EMU_PER_CM, 2))
+            if on_content:
+                stats["content_hits"] += 1
 
             buf = io.BytesIO()
             hair.save(buf, format="PNG")
@@ -747,6 +994,9 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
                 _bump(stats["palettes"], bcolor)
                 buddy_count += 1
                 bs = rng.uniform(0.7, 1.0)
+                stats["hair_lengths_cm"].append(
+                    round(max(dw, dh) * bs / _EMU_PER_CM, 2)
+                )
                 bbuf = io.BytesIO()
                 buddy.save(bbuf, format="PNG")
                 bbuf.seek(0)
@@ -865,6 +1115,7 @@ def strand_zip_bytes(
                 loop_chance=opts.loop_chance,
                 eyelash_chance=opts.eyelash_chance,
                 fragment_chance=opts.fragment_chance,
+                kink_chance=opts.kink_chance,
                 cluster_chance=opts.cluster_chance,
                 seed=per_entry_seed,
             )

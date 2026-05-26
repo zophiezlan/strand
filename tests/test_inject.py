@@ -173,7 +173,7 @@ def test_image_injector_returns_stats(png_bytes):
     assert stats["clusters"] == 0  # cluster_chance=0 disables buddies
     morph_sum = sum(stats["morphologies"].values())
     assert morph_sum == 3
-    assert set(stats["morphologies"].keys()) == {"curve", "loop", "eyelash", "fragment"}
+    assert set(stats["morphologies"].keys()) == {"curve", "loop", "eyelash", "fragment", "kink"}
     # Non-mixed palette: every hair drawn in the requested colour family.
     assert stats["palettes"] == {"white": 3}
 
@@ -501,7 +501,7 @@ def test_api_sample_loop_variant(client):
     assert r.status_code == 200
 
 
-@pytest.mark.parametrize("morphology", ["curve", "loop", "eyelash", "fragment"])
+@pytest.mark.parametrize("morphology", ["curve", "loop", "eyelash", "fragment", "kink"])
 def test_api_sample_morphology_choices(client, morphology):
     r = client.get("/api/sample", params={"palette": "dark", "seed": 1, "morphology": morphology})
     assert r.status_code == 200
@@ -644,6 +644,142 @@ def test_clusters_can_increase_hair_count(pdf_bytes):
     assert total_images(0.95) > total_images(0.0)
 
 
+# --- Kink morphology + follicle bulb --------------------------------------
+
+def test_kink_morphology_is_registered():
+    """kink should appear in the dispatch table and the cm-length map."""
+    from app.core import MORPHOLOGIES, MORPHOLOGY_LENGTH_CM
+    assert "kink" in MORPHOLOGIES
+    assert "kink" in MORPHOLOGY_LENGTH_CM
+    lo, hi = MORPHOLOGY_LENGTH_CM["kink"]
+    assert 0 < lo < hi < 10  # short-ish, body-hair range
+
+
+def test_kink_renderer_produces_non_empty_image():
+    import random
+    from app.core import _generate_kink_hair
+    img = _generate_kink_hair(random.Random(7), palette="dark")
+    # The strand should have some non-transparent pixels.
+    alpha = img.split()[-1]
+    assert alpha.getextrema()[1] > 0
+
+
+def test_kink_strand_visibly_zigzags():
+    """A kink hair should have visibly more direction changes than a curve.
+
+    Count alpha-mass columns in the strand image: a kink, projected onto its
+    primary axis, should be wider (more y-spread) than a single bezier curve
+    drawn at the same canvas dimensions.
+    """
+    import random
+    from app.core import _generate_curve_hair, _generate_kink_hair
+
+    def vertical_spread(img):
+        alpha = img.split()[-1]
+        w, h = alpha.size
+        a = alpha.load()
+        rows_with_ink = 0
+        for y in range(h):
+            for x in range(w):
+                if a[x, y] > 30:
+                    rows_with_ink += 1
+                    break
+        return rows_with_ink
+
+    # Same RNG seed for fair-ish comparison.
+    curve_spread = vertical_spread(_generate_curve_hair(random.Random(1), palette="dark"))
+    kink_spread = vertical_spread(_generate_kink_hair(random.Random(1), palette="dark"))
+    # A kink fills more vertical extent because it zigzags.
+    assert kink_spread > curve_spread * 1.3, (
+        f"kink vertical spread {kink_spread} should be >1.3x curve spread {curve_spread}"
+    )
+
+
+def test_follicle_can_appear_on_a_strand():
+    """When _FOLLICLE_CHANCE is forced to 1.0, every curve hair gets a bulb.
+
+    The strand is drawn identically in both versions (same seed, bezier first,
+    follicle check after), so the bulbed version must have strictly more ink
+    than the clean one. Compare total alpha mass — that's threshold-free and
+    works regardless of palette width scaling.
+    """
+    import random
+    from app import core
+    saved = core._FOLLICLE_CHANCE
+    core._FOLLICLE_CHANCE = 1.0
+    try:
+        bulbed = core._generate_curve_hair(random.Random(11), palette="white")
+        core._FOLLICLE_CHANCE = 0.0
+        clean = core._generate_curve_hair(random.Random(11), palette="white")
+    finally:
+        core._FOLLICLE_CHANCE = saved
+
+    def total_ink(img):
+        return sum(img.split()[-1].getdata())
+
+    assert total_ink(bulbed) > total_ink(clean) + 500, (
+        f"follicle should add visible ink mass: bulbed={total_ink(bulbed)} "
+        f"vs clean={total_ink(clean)}"
+    )
+
+
+# --- Extended stats (substrate / lengths / content-hits) ------------------
+
+def test_image_stats_include_substrate_lengths_and_hits(png_bytes):
+    opts = InjectOptions(seed=1, image_count=3, cluster_chance=0.0, palette="white")
+    _, stats = inject_image_bytes(png_bytes, ".png", opts)
+
+    sub = stats["substrate"]
+    assert sub is not None
+    assert sub["width_native"] == 400 and sub["height_native"] == 300
+    assert sub["native_unit"] == "px"
+    assert sub["dpi"] in (72, 96)  # PIL fallback / default
+    assert sub["width_cm"] > 0 and sub["height_cm"] > 0
+
+    # One length per hair, all within the curve cm range with a thumbnail clamp
+    # safety margin.
+    assert len(stats["hair_lengths_cm"]) == stats["hairs"]
+    assert all(0 < L < 20 for L in stats["hair_lengths_cm"])
+
+    # Content-hits must be between 0 and the number of primary hairs (3).
+    assert 0 <= stats["content_hits"] <= 3
+
+
+def test_pdf_stats_include_substrate(pdf_bytes):
+    opts = InjectOptions(seed=2, rate=1.0, hairs_per_page=2, cluster_chance=0.0)
+    _, stats = inject_pdf_bytes(pdf_bytes, opts)
+    sub = stats["substrate"]
+    assert sub is not None
+    assert sub["native_unit"] == "pt"
+    # US letter ≈ 21.6 × 27.9 cm
+    assert 21 < sub["width_cm"] < 22
+    assert 27 < sub["height_cm"] < 28
+    assert sub["page_count"] == 3
+    assert len(stats["hair_lengths_cm"]) == stats["hairs"]
+
+
+def test_pptx_stats_include_substrate(pptx_bytes):
+    opts = InjectOptions(seed=3, rate=1.0, hairs_per_page=1, cluster_chance=0.0)
+    _, stats = inject_pptx_bytes(pptx_bytes, opts)
+    sub = stats["substrate"]
+    assert sub is not None
+    assert sub["native_unit"] == "EMU"
+    # Default pptx ≈ 25.4 × 19.05 cm (10 × 7.5 in).
+    assert 25 < sub["width_cm"] < 26
+    assert sub["slide_count"] == 3
+
+
+def test_zip_stats_aggregate_lengths_without_substrate(zip_bytes):
+    opts = options_from_ui(palette="dark", intensity="normal", seed=42)
+    _, report = strand_zip_bytes(zip_bytes, opts, name_suffix="-strand")
+    agg = report["stats"]
+    # A zip mixes substrates, so the aggregate substrate is None.
+    assert agg["substrate"] is None
+    # Lengths from every entry are concatenated.
+    assert len(agg["hair_lengths_cm"]) == agg["hairs"]
+    assert all(0 < L < 30 for L in agg["hair_lengths_cm"])
+
+
 # --- DPI / cm-based sizing -------------------------------------------------
 
 def test_eyelash_is_smaller_than_curve_on_same_canvas():
@@ -668,7 +804,7 @@ def test_eyelash_is_smaller_than_curve_on_same_canvas():
     def median_long(hair, range_cm):
         sizes = []
         for s in range(50):
-            _, _, dw, dh = _place(
+            _, _, dw, dh, _hit = _place(
                 random.Random(s), 1000, 1000, hair.size[0], hair.size[1],
                 range_cm, units,
             )
@@ -694,7 +830,7 @@ def test_large_image_doesnt_get_huge_hair():
 
     longest = 0
     for s in range(30):
-        _, _, dw, dh = _place(
+        _, _, dw, dh, _hit = _place(
             random.Random(s), 3000, 3000, 400, 120,
             MORPHOLOGY_LENGTH_CM["curve"], units,
         )
@@ -714,7 +850,7 @@ def test_thumbnail_hair_clamped_to_substrate():
     units = _image_pixels_per_cm(img)
 
     for s in range(20):
-        _, _, dw, dh = _place(
+        _, _, dw, dh, _hit = _place(
             random.Random(s), 60, 60, 400, 120,
             MORPHOLOGY_LENGTH_CM["curve"], units,
         )

@@ -373,6 +373,32 @@ legend {
 }
 .stats-line { display: block; }
 
+/* Compare — hold-to-peek button. While held, the preview swaps to the
+   original (un-haired) image; release to flip back. Subtle "active" state
+   while held so the user knows they're in the comparison mode. */
+.compare {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 11px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  font: 500 14px/1 inherit;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+}
+.compare:hover { border-color: #c8c4ba; background: #faf9f5; }
+.compare.peeking,
+.compare:active {
+  background: #f3efe7;
+  border-color: var(--accent);
+  transform: translateY(1px);
+}
+
 /* Download — the explicit, opt-in save button.
    Stranding no longer auto-downloads on completion; the user looks at the
    preview first, then clicks here when they're happy. */

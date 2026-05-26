@@ -95,14 +95,40 @@ the public API.
 # Strand every supported file under ./folder, with backups + a manifest.
 strand inject ./folder --intensity normal --palette dark --seed 42
 
+# A single file works too. Default is overwrite-in-place + backup.
+strand inject ./photo.png --seed 42
+
+# Sibling write: leave photo.png alone, write photo-strand.png next to it.
+# Use `=` because the value starts with a dash.
+strand inject ./photo.png --name-suffix=-strand
+
+# Non-destructive bulk run: mirror the source tree under ./out/, originals untouched.
+strand inject ./folder --output-dir ./out
+
+# Zips are handled too — unpacked, each supported entry hairified, repacked
+# with a _strand-report.txt inside. Same flag-set as everything else.
+strand inject ./pack.zip --name-suffix=-strand
+
+# Filter by glob (repeatable). Matched against both the relative path and the basename.
+strand inject ./folder --include '*.pdf' --exclude 'drafts/**'
+
 # Dry-run first to see what would be touched.
 strand inject ./folder --dry-run
 
 # Crank the joke up.
 strand inject ./folder --intensity cousin-itt --palette mixed
 
+# Machine-readable summary for scripting.
+strand inject ./folder --json --no-backup
+
 # Undo a run.
 strand restore ./folder/.strand_backups/manifest.json
+
+# Or just: find the most recent manifest under cwd and restore from it.
+strand undo
+
+# Quick discoverability — palettes, intensities, morphologies, supported types.
+strand list
 
 # Render a grid of sample hairs (good for previewing a palette).
 strand preview ./samples.png --palette grey --count 16
@@ -114,17 +140,68 @@ strand sample - --palette dark > a-hair.png
 
 CLI-specific behaviour, deliberately not in the web version:
 
+- **File, directory, or zip** as a target. The zip path mirrors the web —
+  contents are hairified in place and `_strand-report.txt` lands inside.
 - **Directory walking** with skip rules (`.git`, `node_modules`, hidden dirs,
   build artefacts).
+- **`--include` / `--exclude` glob filters** (repeatable) for restricting
+  what gets touched on a directory walk.
+- **`--name-suffix`** to write a renamed copy alongside the original (e.g.
+  `photo-strand.png`) instead of overwriting in place. Same semantics as the
+  web's filename-suffix.
+- **`--output-dir`** to write outputs into a separate directory tree,
+  mirroring the source layout. Originals stay untouched.
 - **mtime preservation** (`--preserve-mtime`, on by default; `--no-preserve-mtime`
-  to opt out). Filesystem access makes this honest — browsers don't allow it,
-  so the web version doesn't pretend to.
-- **Backups + manifest**: every modified file is copied to
-  `<dir>/.strand_backups/` first; the run's manifest can be passed to
-  `strand restore` to roll back.
+  to opt out). Only applies to in-place overwrites. Filesystem access makes
+  this honest — browsers don't allow it, so the web version doesn't pretend to.
+- **Backups + manifest**: when overwriting in place, every modified file is
+  copied to `<target>/.strand_backups/` first; the run's manifest can be
+  passed to `strand restore` to roll back. Automatically skipped when
+  `--name-suffix` or `--output-dir` is set (originals already preserved).
 - **`--dry-run`** to list candidates without changing anything.
 - **`--no-backup`** if you're already under version control and don't need
   the safety net.
+- **`--json`** emits a structured report (per-file stats, aggregate hair
+  counts, content-aware ratios) instead of human-readable prose. Output is
+  pure ASCII — no progress bar, no ANSI colour — safe to pipe into `jq`.
+- **`--quiet` / `--verbose`** dial the noise level. Verbose adds per-file
+  stats; quiet suppresses everything but failures.
+- **Progress bar + colourised output** in interactive terminals via
+  [Rich](https://github.com/Textualize/rich). Auto-disabled when stdout is
+  piped or redirected, so `strand inject ... | grep haired` still works.
+- **`strand undo`** finds the most-recent `.strand_backups/manifest.json`
+  under cwd (or a given path) and restores from it — no need to type out
+  the manifest path.
+- **Confirmation prompt** before in-place runs with `--no-backup` on more
+  than a handful of files. Pass `--yes` / `-y` to skip, or run from a
+  non-interactive shell (CI etc.) where the prompt is bypassed automatically.
+
+### Shell completion
+
+The CLI registers tab-completion via
+[`argcomplete`](https://kislyuk.github.io/argcomplete/). Activate it once per
+shell:
+
+```bash
+# bash / zsh (one-time global install — no per-script wiring needed)
+activate-global-python-argcomplete --user
+
+# fish
+register-python-argcomplete --shell fish strand | source
+
+# Or, per-shell, just for `strand`:
+eval "$(register-python-argcomplete strand)"
+```
+
+Then `strand inject --pal<TAB>` will complete the flag and offer the seven
+palette names; `--intensity <TAB>` lists the six density tiers; positional
+arguments tab-complete to filenames.
+
+### Version
+
+```bash
+strand --version
+```
 
 The CLI uses the same `app/core.py` rendering and placement code as the web
 service, so palette / intensity / content-aware placement / seed semantics are

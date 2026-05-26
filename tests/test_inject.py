@@ -165,14 +165,37 @@ def test_seed_is_deterministic(png_bytes):
 # --- Stats ------------------------------------------------------------------
 
 def test_image_injector_returns_stats(png_bytes):
-    """Stats track hair count, per-morphology breakdown, and pages touched."""
-    opts = InjectOptions(seed=1, image_count=3, cluster_chance=0.0)
+    """Stats track hair count, per-morphology breakdown, palettes, pages, clusters."""
+    opts = InjectOptions(seed=1, image_count=3, cluster_chance=0.0, palette="white")
     _, stats = inject_image_bytes(png_bytes, ".png", opts)
     assert stats["hairs"] == 3
     assert stats["pages_touched"] == 1
+    assert stats["clusters"] == 0  # cluster_chance=0 disables buddies
     morph_sum = sum(stats["morphologies"].values())
     assert morph_sum == 3
     assert set(stats["morphologies"].keys()) == {"curve", "loop", "eyelash", "fragment"}
+    # Non-mixed palette: every hair drawn in the requested colour family.
+    assert stats["palettes"] == {"white": 3}
+
+
+def test_mixed_palette_resolves_to_concrete_colours(png_bytes):
+    """`mixed` should produce a breakdown of actual palette names, never the
+    literal string 'mixed'."""
+    opts = InjectOptions(seed=99, image_count=12, cluster_chance=0.0, palette="mixed")
+    _, stats = inject_image_bytes(png_bytes, ".png", opts)
+    assert "mixed" not in stats["palettes"], "mixed should be resolved per hair"
+    assert sum(stats["palettes"].values()) == 12
+    # With 12 draws across 6 palettes, very likely we get >1 distinct colour.
+    assert len(stats["palettes"]) > 1
+
+
+def test_clusters_count_reflects_buddies(png_bytes):
+    """High cluster_chance should produce a non-zero cluster count."""
+    opts = InjectOptions(seed=7, image_count=4, cluster_chance=0.95, palette="white")
+    _, stats = inject_image_bytes(png_bytes, ".png", opts)
+    assert stats["clusters"] > 0
+    # And total hairs strictly exceeds image_count (because buddies added).
+    assert stats["hairs"] > 4
 
 
 def test_pdf_injector_stats_track_pages(pdf_bytes):

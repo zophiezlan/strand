@@ -233,23 +233,36 @@ def generate_hair_with_morphology(
     loop_chance: float = 0.15,
     eyelash_chance: float = 0.08,
     fragment_chance: float = 0.08,
-) -> tuple[Image.Image, str]:
-    """Pick a morphology by weighted random choice; return (image, name).
+) -> tuple[Image.Image, str, str]:
+    """Pick a morphology by weighted random choice; return (image, morphology, palette).
 
-    Callers that want stats use this; callers that just want the image use
-    `generate_hair`.
+    For "mixed" palette, a concrete palette is resolved once per hair (so one
+    strand stays in a single colour family) and the resolved name is returned
+    so callers can build a colour breakdown.
     """
     r = rng.random()
-    cum = loop_chance
-    if r < cum:
-        return _generate_loop_hair(rng, palette=palette), "loop"
-    cum += eyelash_chance
-    if r < cum:
-        return _generate_eyelash_hair(rng, palette=palette), "eyelash"
-    cum += fragment_chance
-    if r < cum:
-        return _generate_fragment_hair(rng, palette=palette), "fragment"
-    return _generate_curve_hair(rng, palette=palette), "curve"
+    # Morphology pick happens first so the RNG sequence is unchanged when
+    # palette isn't "mixed" (preserves the seed-determinism guarantee).
+    if r < loop_chance:
+        morph = "loop"
+        renderer = _generate_loop_hair
+    elif r < loop_chance + eyelash_chance:
+        morph = "eyelash"
+        renderer = _generate_eyelash_hair
+    elif r < loop_chance + eyelash_chance + fragment_chance:
+        morph = "fragment"
+        renderer = _generate_fragment_hair
+    else:
+        morph = "curve"
+        renderer = _generate_curve_hair
+
+    # Resolve "mixed" → concrete palette here (rather than inside
+    # _random_hair_color) so we can report which colour family was drawn.
+    resolved = palette
+    if resolved == "mixed":
+        resolved = rng.choice(list(PALETTES))
+
+    return renderer(rng, palette=resolved), morph, resolved
 
 
 def generate_hair(
@@ -260,7 +273,7 @@ def generate_hair(
     fragment_chance: float = 0.08,
 ) -> Image.Image:
     """Pick a morphology by weighted random choice; default is the curved strand."""
-    img, _ = generate_hair_with_morphology(
+    img, _, _ = generate_hair_with_morphology(
         rng, palette=palette,
         loop_chance=loop_chance, eyelash_chance=eyelash_chance,
         fragment_chance=fragment_chance,
@@ -269,20 +282,33 @@ def generate_hair(
 
 
 def _empty_stats() -> dict:
-    """Fresh stats dict — total hair count, morphology breakdown, pages touched."""
+    """Fresh stats dict — every counter the injectors fill in.
+
+    `palettes` and `morphologies` are dynamic maps of name → count.
+    `clusters` counts primary hairs that grew at least one buddy.
+    """
     return {
         "hairs": 0,
         "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0},
+        "palettes": {},
         "pages_touched": 0,
+        "clusters": 0,
     }
+
+
+def _bump(d: dict, key: str) -> None:
+    d[key] = d.get(key, 0) + 1
 
 
 def _merge_stats(into: dict, src: dict) -> None:
     """Aggregate `src` stats into `into` in place. Used by the zip handler."""
     into["hairs"] += src.get("hairs", 0)
     into["pages_touched"] += src.get("pages_touched", 0)
+    into["clusters"] += src.get("clusters", 0)
     for m, n in src.get("morphologies", {}).items():
         into["morphologies"][m] = into["morphologies"].get(m, 0) + n
+    for p, n in src.get("palettes", {}).items():
+        into["palettes"][p] = into["palettes"].get(p, 0) + n
 
 
 def _rotate_hair(hair: Image.Image, rng: random.Random) -> Image.Image:
@@ -513,25 +539,31 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> tuple[b
     regions = _image_content_regions(img)
 
     for _ in range(max(1, opts.image_count)):
-        hair, morph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+        hair, morph, color = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
         hair = _rotate_hair(hair, rng)
         stats["hairs"] += 1
         stats["morphologies"][morph] += 1
+        _bump(stats["palettes"], color)
         hw, hh = hair.size
         x, y, dw, dh = _place(rng, iw, ih, hw, hh, opts.scale_range,
                               regions=regions, content_bias=opts.content_bias)
         hair_sized = hair.resize((max(1, int(dw)), max(1, int(dh))), Image.LANCZOS)
         img.alpha_composite(hair_sized, (int(x), int(y)))
 
+        buddy_count = 0
         for bx, by in _buddy_offsets(rng, dw, dh, iw, ih, x, y, opts.cluster_chance):
-            buddy, bmorph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+            buddy, bmorph, bcolor = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
             buddy = _rotate_hair(buddy, rng)
             stats["hairs"] += 1
             stats["morphologies"][bmorph] += 1
+            _bump(stats["palettes"], bcolor)
+            buddy_count += 1
             scale = rng.uniform(0.7, 1.0)
             bw, bh = max(1, int(dw * scale)), max(1, int(dh * scale))
             buddy = buddy.resize((bw, bh), Image.LANCZOS)
             img.alpha_composite(buddy, (int(bx), int(by)))
+        if buddy_count > 0:
+            stats["clusters"] += 1
 
     out = io.BytesIO()
     if suffix in (".jpg", ".jpeg"):
@@ -576,10 +608,11 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
             pw = page.rect.width
             ph = page.rect.height
             for _ in range(per_page):
-                hair, morph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+                hair, morph, color = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
                 hair = _rotate_hair(hair, rng)
                 stats["hairs"] += 1
                 stats["morphologies"][morph] += 1
+                _bump(stats["palettes"], color)
                 hw, hh = hair.size
                 x, y, dw, dh = _place(rng, pw, ph, hw, hh, opts.scale_range,
                                       regions=regions, content_bias=opts.content_bias)
@@ -594,11 +627,14 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
                     overlay=True,
                 )
 
+                buddy_count = 0
                 for bx, by in _buddy_offsets(rng, dw, dh, pw, ph, x, y, opts.cluster_chance):
-                    buddy, bmorph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+                    buddy, bmorph, bcolor = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
                     buddy = _rotate_hair(buddy, rng)
                     stats["hairs"] += 1
                     stats["morphologies"][bmorph] += 1
+                    _bump(stats["palettes"], bcolor)
+                    buddy_count += 1
                     bs = rng.uniform(0.7, 1.0)
                     bw_, bh_ = dw * bs, dh * bs
                     bbuf = io.BytesIO()
@@ -609,6 +645,8 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
                         keep_proportion=False,
                         overlay=True,
                     )
+                if buddy_count > 0:
+                    stats["clusters"] += 1
 
         return doc.tobytes(garbage=4, deflate=True), stats
     finally:
@@ -641,10 +679,11 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
         stats["pages_touched"] += 1
         regions = _pptx_content_regions(slide)
         for _ in range(per_slide):
-            hair, morph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+            hair, morph, color = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
             hair = _rotate_hair(hair, rng)
             stats["hairs"] += 1
             stats["morphologies"][morph] += 1
+            _bump(stats["palettes"], color)
             hw, hh = hair.size
             x, y, dw, dh = _place(rng, sw, sh, hw, hh, opts.scale_range,
                                   regions=regions, content_bias=opts.content_bias)
@@ -654,11 +693,14 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
             buf.seek(0)
             slide.shapes.add_picture(buf, int(x), int(y), width=int(dw), height=int(dh))
 
+            buddy_count = 0
             for bx, by in _buddy_offsets(rng, dw, dh, sw, sh, x, y, opts.cluster_chance):
-                buddy, bmorph = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+                buddy, bmorph, bcolor = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
                 buddy = _rotate_hair(buddy, rng)
                 stats["hairs"] += 1
                 stats["morphologies"][bmorph] += 1
+                _bump(stats["palettes"], bcolor)
+                buddy_count += 1
                 bs = rng.uniform(0.7, 1.0)
                 bbuf = io.BytesIO()
                 buddy.save(bbuf, format="PNG")
@@ -667,6 +709,8 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
                     bbuf, int(bx), int(by),
                     width=int(dw * bs), height=int(dh * bs),
                 )
+            if buddy_count > 0:
+                stats["clusters"] += 1
 
     out = io.BytesIO()
     prs.save(out)

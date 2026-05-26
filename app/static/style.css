@@ -363,9 +363,10 @@ legend {
 .stats p {
   margin: 6px 0 0;
   padding-left: 18px;
-  line-height: 1.5;
+  line-height: 1.55;
   color: var(--ink);
 }
+.stats-line { display: block; }
 
 /* Download — the explicit, opt-in save button.
    Stranding no longer auto-downloads on completion; the user looks at the

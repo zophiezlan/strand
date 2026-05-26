@@ -288,24 +288,58 @@
     const total = s.hairs || 0;
     if (total === 0) { statsEl.hidden = true; return; }
 
-    const morphs = s.morphologies || {};
-    // Order morphologies by count desc so the dominant one reads first.
-    const named = Object.entries(morphs)
-      .filter(([, n]) => n > 0)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, n]) => `${n} ${pluralize(name, n)}`);
-    const morphStr = named.length ? ` (${named.join(", ")})` : "";
-
     const pages = s.pages_touched || 0;
-    const pagesStr = pages > 1 ? ` across ${pages} pages` : "";
+    const clusters = s.clusters || 0;
+    const morphs = entriesByCount(s.morphologies || {});
+    const palettes = entriesByCount(s.palettes || {});
 
-    statsLineEl.textContent = `${total} ${pluralize("hair", total)}${morphStr}${pagesStr}.`;
+    const lines = [];
+
+    // Line 1: totals + pages + clusters.
+    const totalsBits = [`${total} ${pluralize("hair", total)}`];
+    if (pages > 1) totalsBits.push(`across ${pages} pages`);
+    if (clusters > 0) totalsBits.push(`in ${clusters} ${pluralize("clump", clusters)}`);
+    lines.push(totalsBits.join(" ") + ".");
+
+    // Line 2: morphology breakdown. Omit when only one morphology was drawn
+    // (the count is already implied by the total).
+    if (morphs.length === 1 && morphs[0][1] === total) {
+      lines.push(`Type: ${pluralize(morphs[0][0], total)}.`);
+    } else if (morphs.length > 1) {
+      const parts = morphs.map(([name, n]) => `${n} ${pluralize(name, n)}`);
+      lines.push(`Types: ${parts.join(", ")}.`);
+    }
+
+    // Line 3: colour breakdown. Singular palette → "Colour: white."
+    // Mixed result → "Colours: 3 dark, 2 blonde, 1 grey."
+    if (palettes.length === 1) {
+      lines.push(`Colour: ${palettes[0][0]}.`);
+    } else if (palettes.length > 1) {
+      const parts = palettes.map(([name, n]) => `${n} ${name}`);
+      lines.push(`Colours: ${parts.join(", ")}.`);
+    }
+
+    statsLineEl.innerHTML = lines
+      .map((l) => `<span class="stats-line">${escapeHtml(l)}</span>`)
+      .join("");
     statsEl.hidden = false;
+  }
+
+  function entriesByCount(obj) {
+    return Object.entries(obj)
+      .filter(([, n]) => n > 0)
+      .sort((a, b) => b[1] - a[1]);
   }
 
   function pluralize(word, n) {
     if (n === 1) return word;
     return word + "s";
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>"']/g, (ch) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]),
+    );
   }
 
   function downloadNameFrom(res, fallback) {

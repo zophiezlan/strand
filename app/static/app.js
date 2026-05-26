@@ -53,10 +53,15 @@
   }
 
   // --- File / folder pickers, drop zone ---
-  // Click on the drop zone opens the file picker, unless the click was on a
-  // link inside it (the "pick a folder" affordance has its own handler).
+  // Click on the drop zone opens the file picker, unless:
+  //   • the click was on a link inside it (the "pick a folder" link has its
+  //     own handler and triggers the folder picker), OR
+  //   • the click bubbled up from one of the hidden <input> elements — those
+  //     are triggered programmatically (e.g. from the folder-link handler)
+  //     and we'd otherwise queue a second file picker on top of the one we
+  //     just opened on the user's behalf.
   dropZone.addEventListener("click", (e) => {
-    if (e.target.closest("a")) return;
+    if (e.target.closest("a, input")) return;
     fileInput.click();
   });
   fileInput.addEventListener("change", () => {

@@ -89,6 +89,14 @@ header .tag {
 }
 .drop-text strong { display: block; font-size: 17px; margin-top: 2px; }
 .drop-text span { color: var(--ink-soft); font-size: 14px; }
+.drop-text a {
+  color: var(--ink);
+  font-weight: 500;
+  text-decoration: none;
+  border-bottom: 1px dotted transparent;
+  transition: border-color 140ms ease;
+}
+.drop-text a:hover { border-bottom-color: var(--ink); }
 .drop-meta { color: var(--ink-soft); font-size: 12px; margin-top: 8px; }
 
 /* Controls */
@@ -113,25 +121,32 @@ legend {
 }
 
 .row { display: flex; gap: 8px; flex-wrap: wrap; }
-.row.wrap { gap: 6px 8px; }
 
-/* Density chips use a 3-column grid so six chips lay out as 2 balanced rows
-   instead of wrapping into a 5+1 orphan. */
+/* Palette + density share the same 3-column grid so the two selectors read
+   as siblings. Palette has 7 chips → 3 rows (last row 1 chip in the leftmost
+   cell); density has 6 → 2 rows full. Same column count, same chip height,
+   same padding, same gap. */
+.row.palette-row,
 .row.density {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6px 8px;
+  gap: 8px;
 }
-.row.density .chip { padding: 10px 8px; text-align: center; }
 
 .chip {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
-  padding: 10px 16px;
+  padding: 0 14px;
+  min-height: 38px;
   border-radius: 999px;
   font: inherit;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  white-space: nowrap;
   transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
@@ -143,21 +158,15 @@ legend {
 }
 
 /* Palette chips show a colour-range swatch — a horizontal gradient from the
-   palette's lower bound to its upper bound. That's an instantly-legible
-   signal of what colour you're choosing, and reads at any chip size. */
-.palette-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  padding: 5px 14px 5px 6px;
-}
+   palette's lower bound to its upper bound. Layout (padding, height, gap)
+   comes from `.chip`; this rule only exists if we ever need palette-specific
+   overrides in the future. */
 
 .chip-sample {
   display: inline-block;
   width: 36px;
   height: 22px;
   border-radius: 5px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
   flex-shrink: 0;
   background: linear-gradient(to right, #888, #ccc); /* fallback */
 }
@@ -175,10 +184,6 @@ legend {
     rgb(210,180,130) 45%,
     rgb(165,80,42) 68%,
     rgb(170,168,165) 90%);
-}
-
-.palette-chip.selected .chip-sample {
-  border-color: rgba(255, 255, 255, 0.35);
 }
 
 .chip-label { line-height: 1; font-weight: 500; }

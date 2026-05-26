@@ -389,6 +389,188 @@ def test_suffix_strips_path_separators(client, png_bytes):
     assert "/" not in cd.split("filename=")[1]
 
 
+# --- /api/sample ------------------------------------------------------------
+
+def test_api_sample_returns_png(client):
+    r = client.get("/api/sample", params={"palette": "dark", "seed": 1})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    with Image.open(io.BytesIO(r.content)) as im:
+        im.load()
+        assert im.format == "PNG"
+        # Hairs render with an alpha channel so they composite cleanly.
+        assert "A" in im.getbands()
+
+
+def test_api_sample_is_deterministic_for_seed(client):
+    a = client.get("/api/sample", params={"palette": "blonde", "seed": 42}).content
+    b = client.get("/api/sample", params={"palette": "blonde", "seed": 42}).content
+    assert a == b
+    c = client.get("/api/sample", params={"palette": "blonde", "seed": 43}).content
+    assert a != c
+
+
+def test_api_sample_rejects_unknown_palette(client):
+    r = client.get("/api/sample", params={"palette": "neon-pink"})
+    assert r.status_code == 400
+
+
+@pytest.mark.parametrize("palette", ["dark", "brown", "blonde", "red", "grey", "white", "mixed"])
+def test_api_sample_all_palettes(client, palette):
+    r = client.get("/api/sample", params={"palette": palette, "seed": 1})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+
+
+def test_api_sample_loop_variant(client):
+    # `loop=true` forces the laminated-loop morphology (loop_chance=1.0).
+    r = client.get("/api/sample", params={"palette": "dark", "seed": 1, "loop": "true"})
+    assert r.status_code == 200
+
+
+@pytest.mark.parametrize("morphology", ["curve", "loop", "eyelash", "fragment"])
+def test_api_sample_morphology_choices(client, morphology):
+    r = client.get("/api/sample", params={"palette": "dark", "seed": 1, "morphology": morphology})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+
+
+def test_api_sample_rejects_unknown_morphology(client):
+    r = client.get("/api/sample", params={"palette": "dark", "morphology": "spiral"})
+    assert r.status_code == 400
+
+
+def test_api_sample_morphology_varies_output(client):
+    """Different morphologies on the same (palette, seed) must produce different bytes."""
+    eye = client.get("/api/sample", params={"palette": "dark", "seed": 7, "morphology": "eyelash"}).content
+    frag = client.get("/api/sample", params={"palette": "dark", "seed": 7, "morphology": "fragment"}).content
+    curve = client.get("/api/sample", params={"palette": "dark", "seed": 7, "morphology": "curve"}).content
+    assert eye != frag != curve != eye
+
+
+# --- Multi-file & folder upload --------------------------------------------
+
+def test_multi_file_upload_returns_zip(client, png_bytes, pdf_bytes):
+    files = [
+        ("file", ("a.png", png_bytes, "image/png")),
+        ("file", ("b.pdf", pdf_bytes, "application/pdf")),
+    ]
+    r = client.post("/strand", files=files, data={"palette": "dark", "intensity": "normal"})
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/zip"
+    # No common root → falls back to "files-strand.zip".
+    assert "files-strand.zip" in r.headers["content-disposition"]
+    assert r.headers["X-Strand-Haired"] == "2"
+
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        names = set(z.namelist())
+        assert "a-strand.png" in names
+        assert "b-strand.pdf" in names
+        assert "_strand-report.txt" in names
+
+
+def test_folder_upload_preserves_paths_and_picks_root_name(client, png_bytes, pdf_bytes):
+    """Files uploaded with sub-paths (folder picker) keep their structure, and
+    the response zip is named after the common root."""
+    files = [
+        ("file", ("photos/a.png", png_bytes, "image/png")),
+        ("file", ("photos/notes.pdf", pdf_bytes, "application/pdf")),
+    ]
+    r = client.post("/strand", files=files, data={"palette": "dark", "intensity": "subtle"})
+    assert r.status_code == 200
+    assert "photos-strand.zip" in r.headers["content-disposition"]
+
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+        names = set(z.namelist())
+        assert "photos/a-strand.png" in names
+        assert "photos/notes-strand.pdf" in names
+
+
+def test_single_file_upload_still_returns_raw_file(client, png_bytes):
+    """Backwards-compat: one image upload still returns a raw image, not a zip."""
+    r = client.post(
+        "/strand",
+        files={"file": ("photo.png", png_bytes, "image/png")},
+        data={"palette": "dark", "intensity": "normal"},
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "image/png"
+    assert "X-Strand-Haired" not in r.headers
+
+
+def test_multi_file_total_size_limit(client, png_bytes):
+    """Total payload, not per-file, is what triggers the 25 MB cap."""
+    # 25 fake "files" of ~1.1 MB each (well under 25 MB each, > 25 MB total).
+    big_image = png_bytes + b"\0" * (1_100_000 - len(png_bytes))
+    files = [("file", (f"f{i}.png", big_image, "image/png")) for i in range(25)]
+    r = client.post("/strand", files=files, data={"palette": "dark", "intensity": "subtle"})
+    assert r.status_code == 413
+
+
+def test_no_uploads_returns_400(client):
+    r = client.post("/strand", data={"palette": "dark", "intensity": "normal"})
+    assert r.status_code == 400
+
+
+# --- Error envelope --------------------------------------------------------
+
+def test_500_includes_error_id(client, monkeypatch, png_bytes):
+    """An unexpected exception path should still surface a short error_id to the user."""
+    from app import main as main_mod
+    def _boom(*a, **kw):
+        raise RuntimeError("synthetic")
+    monkeypatch.setattr(main_mod, "strand_bytes", _boom)
+
+    r = client.post(
+        "/strand",
+        files={"file": ("photo.png", png_bytes, "image/png")},
+        data={"palette": "dark", "intensity": "normal"},
+    )
+    assert r.status_code == 500
+    assert "error_id" in r.json()["detail"]
+    assert r.headers.get("X-Strand-Error-Id")
+
+
+# --- Static-mount-at-root smoke check --------------------------------------
+
+def test_root_serves_index_html(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Strand" in r.text
+
+
+def test_static_assets_resolve_at_root(client):
+    """index.html references `style.css` / `app.js` relatively. The static
+    mount at `/` must serve those at the root level."""
+    for asset in ("style.css", "app.js"):
+        r = client.get(f"/{asset}")
+        assert r.status_code == 200, f"GET /{asset} returned {r.status_code}"
+
+
+# --- Clusters --------------------------------------------------------------
+
+def test_clusters_can_increase_hair_count(pdf_bytes):
+    """With cluster_chance high, a PDF should embed more hairs per page than
+    with clusters off. Don't assert an exact ratio (RNG-dependent) — just that
+    the count strictly increases when buddies are likely."""
+    import fitz
+
+    def total_images(cluster_chance):
+        opts = options_from_ui(palette="dark", intensity="normal", seed=2024)
+        # options_from_ui doesn't take cluster_chance; mutate after construction.
+        opts.cluster_chance = cluster_chance
+        out = inject_pdf_bytes(pdf_bytes, opts)
+        doc = fitz.open(stream=out, filetype="pdf")
+        try:
+            return sum(len(doc[i].get_images()) for i in range(doc.page_count))
+        finally:
+            doc.close()
+
+    assert total_images(0.95) > total_images(0.0)
+
+
 def test_zip_endpoint_roundtrip(client, zip_bytes):
     import zipfile
     r = client.post(

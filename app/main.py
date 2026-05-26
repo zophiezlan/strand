@@ -67,9 +67,11 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
-# Static assets (app.js, style.css). Mounted after the explicit "/" route so
-# the index handler keeps priority.
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+# Static mount happens at the *bottom* of this module so every explicit route
+# (including `POST /strand`) is registered first. The mount sits at `/` (not
+# `/static`) so that sibling-relative asset paths in index.html resolve both in
+# production and when the HTML is opened directly from disk (e.g. by an editor
+# preview pane). See the bottom of this file.
 
 
 _OUTPUT_CONTENT_TYPES = {
@@ -134,67 +136,130 @@ def _parse_seed(raw: str | None) -> int | None:
     return v & 0x7FFFFFFF
 
 
+def _bundle_uploads_into_zip(items: list[tuple[str, bytes]]) -> bytes:
+    """Pack multiple uploads into one in-memory zip, preserving sub-paths."""
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as z:
+        for name, data in items:
+            # Normalize separators; strip any leading slashes for safety.
+            safe = name.replace("\\", "/").lstrip("/")
+            if not safe:
+                continue
+            z.writestr(safe, data)
+    return buf.getvalue()
+
+
+def _common_root(filenames: list[str]) -> str | None:
+    """If every filename starts with the same single segment, return it."""
+    roots = set()
+    for f in filenames:
+        norm = f.replace("\\", "/")
+        if "/" not in norm:
+            return None
+        roots.add(norm.split("/", 1)[0])
+    if len(roots) == 1:
+        return roots.pop()
+    return None
+
+
 @app.post("/strand")
 @limiter.limit("30/hour")
 async def strand(
     request: Request,
-    file: UploadFile = File(...),
     palette: str = Form("dark"),
     intensity: str = Form("normal"),
     seed: str | None = Form(None),
 ):
-    # Read name_suffix from the raw form rather than via Form() so we can tell
-    # "field absent" (default suffix) from "field present but empty" (no suffix).
-    # Starlette/FastAPI collapses empty strings to None when using Form(None).
+    # Read name_suffix and the file list from the raw form. Empty strings come
+    # through as None via FastAPI's Form() coercion, and getlist() lets us
+    # accept multiple `file` fields for multi-file / folder upload.
     raw_form = await request.form()
-    if "name_suffix" in raw_form:
-        raw_suffix = raw_form["name_suffix"]
-    else:
-        raw_suffix = _ABSENT
+    raw_suffix = raw_form["name_suffix"] if "name_suffix" in raw_form else _ABSENT
 
-    filename = file.filename or "upload"
-    suffix = _suffix_of(filename)
-    if suffix not in SUPPORTED_INCLUDING_ZIP:
-        raise HTTPException(
-            status_code=415,
-            detail=f"Unsupported file type: {suffix or '(none)'}. "
-                   f"Supported: {', '.join(sorted(SUPPORTED_INCLUDING_ZIP))}.",
-        )
+    uploads = [v for v in raw_form.getlist("file") if hasattr(v, "filename")]
+    if not uploads:
+        raise HTTPException(status_code=400, detail="No file uploaded.")
 
-    data = await file.read()
-    if not data:
+    # Read all bytes upfront so we can size-check the whole upload before any
+    # processing. The 25 MB cap applies to the *total* payload, not each piece.
+    items: list[tuple[str, bytes]] = []
+    total = 0
+    for f in uploads:
+        data = await f.read()
+        total += len(data)
+        if total > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Upload exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MB total.",
+            )
+        if not data:
+            continue
+        items.append((f.filename or "upload", data))
+    if not items:
         raise HTTPException(status_code=400, detail="Empty upload.")
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"File too large. Limit is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB.",
-        )
 
     parsed_seed = _parse_seed(seed)
     opts = options_from_ui(palette=palette, intensity=intensity, seed=parsed_seed)
     clean_suffix = _sanitize_name_suffix(raw_suffix)
 
+    # Decide whether the response is a single file or a zip:
+    # - one upload that isn't itself a zip → single-file response
+    # - one zip upload → unwrap, hairify each entry, return a zip
+    # - multiple uploads → bundle into a zip, hairify each entry, return a zip
+    single = len(items) == 1
+    single_filename, single_data = items[0] if single else (None, None)
+    single_suffix = _suffix_of(single_filename) if single else None
+    single_is_zip = single and single_suffix in ZIP_SUFFIXES
+
     try:
-        if suffix in ZIP_SUFFIXES:
-            out, report = strand_zip_bytes(data, opts, name_suffix=clean_suffix)
+        if single and not single_is_zip:
+            if single_suffix not in SUPPORTED_SUFFIXES:
+                raise HTTPException(
+                    status_code=415,
+                    detail=f"Unsupported file type: {single_suffix or '(none)'}. "
+                           f"Supported: {', '.join(sorted(SUPPORTED_INCLUDING_ZIP))}.",
+                )
+            out = strand_bytes(single_data, single_filename, opts)
+            response_suffix = single_suffix
+            download_name = _apply_suffix(single_filename, clean_suffix)
+            extra_headers: dict[str, str] = {}
+        else:
+            # Either a real zip upload, or many uploads we wrap into one.
+            if single_is_zip:
+                payload = single_data
+                base_name = single_filename
+            else:
+                payload = _bundle_uploads_into_zip(items)
+                root = _common_root([n for n, _ in items])
+                base_name = (root or "files") + ".zip"
+            out, report = strand_zip_bytes(payload, opts, name_suffix=clean_suffix)
+            response_suffix = ".zip"
+            download_name = _apply_suffix(base_name, clean_suffix)
             extra_headers = {
                 "X-Strand-Haired": str(report["haired_count"]),
                 "X-Strand-Skipped": str(report["skipped_count"]),
                 "X-Strand-Errored": str(report["error_count"]),
             }
-        else:
-            out = strand_bytes(data, filename, opts)
-            extra_headers = {}
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=415, detail=str(exc))
     except Exception as exc:
-        log.exception("strand failed: %s", exc.__class__.__name__)
-        raise HTTPException(status_code=500, detail="Processing failed.")
+        # Surface a short error_id the user can quote when reporting.
+        import uuid
+        err_id = uuid.uuid4().hex[:8]
+        log.exception("strand failed [%s]: %s", err_id, exc.__class__.__name__)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Processing failed (error_id: {err_id}).",
+            headers={"X-Strand-Error-Id": err_id},
+        )
 
-    log.info("strand %s %s seed=%s -> %d bytes", suffix, intensity, opts.seed, len(out))
+    log.info("strand %s n=%d %s seed=%s -> %d bytes",
+             response_suffix, len(items), intensity, opts.seed, len(out))
 
-    content_type = _OUTPUT_CONTENT_TYPES.get(suffix, "application/octet-stream")
-    download_name = _apply_suffix(filename, clean_suffix)
+    content_type = _OUTPUT_CONTENT_TYPES.get(response_suffix, "application/octet-stream")
     headers = {
         "Content-Disposition": f'attachment; filename="{download_name}"',
         "Content-Length": str(len(out)),
@@ -205,6 +270,61 @@ async def strand(
         **extra_headers,
     }
     return StreamingResponse(io.BytesIO(out), media_type=content_type, headers=headers)
+
+
+# ---------------------------------------------------------------------------
+# Public sample endpoint — returns one hair PNG on transparent background.
+# Powers the palette chip previews on the landing page, and is cheap enough
+# to leave unrated. Cached for an hour because the result is deterministic in
+# (palette, seed).
+# ---------------------------------------------------------------------------
+
+import random as _random
+from fastapi.responses import Response
+from .core import MORPHOLOGIES, PALETTE_NAMES, generate_hair
+
+
+@app.get("/api/sample")
+def api_sample(
+    palette: str = "dark",
+    seed: int | None = None,
+    morphology: str | None = None,
+    loop: bool = False,
+):
+    """Return a single hair on transparent background.
+
+    `morphology` selects one of: curve, loop, eyelash, fragment. If omitted,
+    a random morphology is drawn using `generate_hair`'s default weights.
+    `loop=true` is kept as a backwards-compatible shortcut for `morphology=loop`.
+    """
+    name = (palette or "").lower().strip()
+    if name not in PALETTE_NAMES:
+        raise HTTPException(status_code=400, detail=f"unknown palette: {palette!r}")
+    rng = _random.Random(seed) if seed is not None else _random.Random()
+
+    morph = (morphology or "").lower().strip() or ("loop" if loop else None)
+    if morph:
+        if morph not in MORPHOLOGIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown morphology: {morph!r}. Choose from {sorted(MORPHOLOGIES)}.",
+            )
+        hair = MORPHOLOGIES[morph](rng, palette=name)
+    else:
+        hair = generate_hair(rng, palette=name)
+
+    buf = io.BytesIO()
+    hair.save(buf, format="PNG")
+    return Response(
+        content=buf.getvalue(),
+        media_type="image/png",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
+# Static mount must be registered AFTER every explicit route above (Starlette
+# tries routes in declaration order). See note near the top of this file.
+app.mount("/", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 if __name__ == "__main__":

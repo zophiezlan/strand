@@ -63,6 +63,41 @@ def test_cli_preview_writes_a_png(tmp_path: Path):
         assert im.format == "PNG"
 
 
+# --- sample subcommand ----------------------------------------------------
+
+def test_cli_sample_writes_single_hair_png(tmp_path: Path):
+    out = tmp_path / "one.png"
+    rc = main(["sample", str(out), "--palette", "blonde", "--seed", "3"])
+    assert rc == 0
+    with Image.open(out) as im:
+        im.load()
+        assert im.format == "PNG"
+        # Hairs come with an alpha channel — they're meant to composite.
+        assert "A" in im.getbands()
+
+
+def test_cli_sample_morphology_choice(tmp_path: Path):
+    out = tmp_path / "eye.png"
+    rc = main(["sample", str(out), "--morphology", "eyelash", "--seed", "1"])
+    assert rc == 0
+    assert out.is_file()
+
+
+def test_cli_sample_rejects_unknown_morphology(tmp_path: Path):
+    # argparse rejects bad choices with code 2 before our handler runs.
+    with pytest.raises(SystemExit) as ei:
+        main(["sample", str(tmp_path / "x.png"), "--morphology", "spiral"])
+    assert ei.value.code == 2
+
+
+def test_cli_sample_stdout(capsysbinary):
+    """Output '-' writes PNG bytes straight to stdout for pipelines."""
+    rc = main(["sample", "-", "--seed", "1"])
+    assert rc == 0
+    captured = capsysbinary.readouterr()
+    assert captured.out.startswith(b"\x89PNG\r\n\x1a\n")
+
+
 # --- inject ----------------------------------------------------------------
 
 def test_cli_inject_dry_run_changes_nothing(tree: Path, capsys):

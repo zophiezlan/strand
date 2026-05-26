@@ -24,13 +24,21 @@ Two front-ends, one rendering engine:
 - Four palettes: **Dark**, **Mixed**, **Blonde**, **Grey**.
 - Six density tiers: **Subtle / Normal / Heavy / Hirsute / Werewolf / Cousin Itt**.
   The last three are the joke — every page gets multiple hairs.
+- Four morphologies, mixed by default: curved strand, laminated loop with
+  tail, eyelash (short tight curl), and fragment (short wispy piece).
+- Hairs occasionally clump into small tufts (configurable `cluster_chance`) —
+  real shed hair doesn't space itself evenly.
 - Content-aware placement: hairs are biased toward detected content
   (text blocks in PDFs, shapes in pptx, edge-dense regions in images)
   rather than splashing on blank margins — about half the time. The
   other half they land somewhere stray, which is what a real hair would do.
+- **Multi-file & folder uploads**: drop several files (or a whole folder) and
+  Strand bundles them into a zip on its way out, preserving structure.
 - **ZIP uploads**: drop a zip, get a zip. Each supported entry inside is
   hairified; unsupported entries pass through unchanged. A
   `_strand-report.txt` summarising the run is added to the output.
+- **Paste from clipboard**: paste a screenshot directly into the page —
+  it goes straight into the upload slot.
 - **Seed control**: every response includes an `X-Strand-Seed` header.
   Re-submit with the same seed to reproduce the same hairs exactly, or
   re-roll for a fresh take without re-uploading.
@@ -78,6 +86,10 @@ strand restore ./folder/.strand_backups/manifest.json
 
 # Render a grid of sample hairs (good for previewing a palette).
 strand preview ./samples.png --palette grey --count 16
+
+# Or one hair on its own. Pipe to stdout for shell-y workflows.
+strand sample one.png --palette mixed --morphology eyelash --seed 42
+strand sample - --palette dark > a-hair.png
 ```
 
 CLI-specific behaviour, deliberately not in the web version:
@@ -139,10 +151,19 @@ POST /strand
   name_suffix: <string>                                       # optional — default: "-strand"; empty = keep original name
 ```
 
+You can also send multiple `file` fields in the same request (or one zip).
+Multiple uploads always come back as a single zip; sub-paths are preserved.
+
 Response headers:
 
 - `X-Strand-Seed` — the seed used (echo it back as `seed=` to reproduce)
 - For ZIP responses: `X-Strand-Haired`, `X-Strand-Skipped`, `X-Strand-Errored`
+- For 500s: `X-Strand-Error-Id` (also embedded in the JSON `detail`)
+
+`GET /api/sample?palette=<name>&seed=<int>&morphology=<name>` returns one
+hair on transparent PNG (cached an hour). Used internally by the chip
+previews on the landing page, but also handy for embedding samples
+elsewhere.
 
 Returns the haired file with `Content-Disposition: attachment`.
 Limits: 25 MB max upload, 30 requests / hour / IP, 30 s timeout.

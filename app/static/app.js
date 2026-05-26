@@ -1,6 +1,8 @@
 (() => {
   const dropZone = document.getElementById("drop");
   const fileInput = document.getElementById("file");
+  const folderInput = document.getElementById("folder");
+  const pickFolderLink = document.getElementById("pick-folder");
   const goBtn = document.getElementById("go");
   const statusEl = document.getElementById("status");
   const resultEl = document.getElementById("result");
@@ -17,7 +19,8 @@
   const MAX_BYTES = 25 * 1024 * 1024;
   const DEFAULT_SUFFIX = "-strand";
 
-  let currentFile = null;
+  /** Array of File objects currently selected for upload (always >= 0). */
+  let currentFiles = [];
   let palette = "dark";
   let intensity = "normal";
   let lastSeed = null;
@@ -37,10 +40,22 @@
     });
   }
 
-  // --- File picker / drop zone ---
-  dropZone.addEventListener("click", () => fileInput.click());
+  // --- File / folder pickers, drop zone ---
+  // Click on the drop zone opens the file picker, unless the click was on a
+  // link inside it (the "pick a folder" affordance has its own handler).
+  dropZone.addEventListener("click", (e) => {
+    if (e.target.closest("a")) return;
+    fileInput.click();
+  });
   fileInput.addEventListener("change", () => {
-    if (fileInput.files && fileInput.files[0]) setFile(fileInput.files[0]);
+    if (fileInput.files && fileInput.files.length) setFiles(Array.from(fileInput.files));
+  });
+  pickFolderLink.addEventListener("click", (e) => {
+    e.preventDefault();
+    folderInput.click();
+  });
+  folderInput.addEventListener("change", () => {
+    if (folderInput.files && folderInput.files.length) setFiles(Array.from(folderInput.files));
   });
 
   for (const evt of ["dragenter", "dragover"]) {
@@ -54,8 +69,8 @@
   }
   dropZone.addEventListener("drop", (e) => {
     e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length) {
+      setFiles(Array.from(e.dataTransfer.files));
     }
   });
 
@@ -64,25 +79,53 @@
     return i < 0 ? "" : name.slice(i).toLowerCase();
   }
 
-  function setFile(f) {
-    if (f.size > MAX_BYTES) {
-      showError(`File is ${(f.size / (1024 * 1024)).toFixed(1)} MB — limit is 25 MB.`);
+  function fileRelPath(f) {
+    return f.webkitRelativePath || f.name;
+  }
+
+  function setFiles(files) {
+    // Filter to supported types; surface a friendly message if everything got dropped.
+    const accepted = files.filter((f) => SUPPORTED.includes(suffixOf(f.name)));
+    if (!accepted.length) {
+      const tried = files.map((f) => suffixOf(f.name) || "(no extension)").join(", ");
+      showError(`None of those are supported (${tried}). Try ${SUPPORTED.join(", ")}.`);
       return;
     }
-    const suffix = suffixOf(f.name);
-    if (!SUPPORTED.includes(suffix)) {
-      showError(`Sorry, ${suffix || "that"} isn't supported. Try ${SUPPORTED.join(", ")}.`);
+
+    const total = accepted.reduce((s, f) => s + f.size, 0);
+    if (total > MAX_BYTES) {
+      showError(`Selection is ${(total / (1024 * 1024)).toFixed(1)} MB — limit is 25 MB total.`);
       return;
     }
-    currentFile = f;
+
+    currentFiles = accepted;
     lastSeed = null;
     dropZone.classList.add("has-file");
-    dropZone.querySelector(".drop-text strong").textContent = f.name;
-    dropZone.querySelector(".drop-text span").textContent =
-      `${(f.size / 1024).toFixed(0)} KB — ready`;
+
+    const summary = describeSelection(accepted, total, files.length);
+    dropZone.querySelector(".drop-text strong").textContent = summary.title;
+    dropZone.querySelector(".drop-text span").textContent = summary.subtitle;
+
     goBtn.disabled = false;
     hideStatus();
     resultEl.hidden = true;
+  }
+
+  function describeSelection(accepted, totalBytes, originalCount) {
+    const sizeKb = `${(totalBytes / 1024).toFixed(0)} KB`;
+    if (accepted.length === 1) {
+      return { title: accepted[0].name, subtitle: `${sizeKb} — ready` };
+    }
+    // Try to surface a common folder root when the user picked a directory.
+    const rels = accepted.map(fileRelPath);
+    const roots = new Set(rels.map((p) => p.split("/")[0]));
+    const root = roots.size === 1 && rels.every((p) => p.includes("/")) ? roots.values().next().value : null;
+    const skipped = originalCount - accepted.length;
+    const skippedNote = skipped > 0 ? ` (${skipped} unsupported skipped)` : "";
+    return {
+      title: root ? `${root}/ — ${accepted.length} files` : `${accepted.length} files`,
+      subtitle: `${sizeKb} — will be returned as a zip${skippedNote}`,
+    };
   }
 
   function showError(msg) {
@@ -111,7 +154,7 @@
 
   // --- Submit ---
   async function submit({ reuseSeed = false } = {}) {
-    if (!currentFile) return;
+    if (!currentFiles.length) return;
     goBtn.disabled = true;
     rerollSameBtn.disabled = true;
     rerollNewBtn.disabled = true;
@@ -121,7 +164,10 @@
 
     try {
       const form = new FormData();
-      form.append("file", currentFile);
+      for (const f of currentFiles) {
+        // Preserve sub-paths for folder uploads via the third FormData arg.
+        form.append("file", f, fileRelPath(f));
+      }
       form.append("palette", palette);
       form.append("intensity", intensity);
       if (reuseSeed && lastSeed != null) {
@@ -160,11 +206,13 @@
       const isZipResponse = haired != null || skipped != null;
 
       const blob = await res.blob();
-      const downloadName = downloadNameFrom(res, currentFile.name);
-
-      const suffix = suffixOf(currentFile.name);
+      const singleFile = currentFiles[0];
+      const downloadName = downloadNameFrom(res, singleFile.name);
+      const suffix = suffixOf(singleFile.name);
 
       resultEl.hidden = false;
+
+      const previewSingleImage = currentFiles.length === 1 && IMAGE_SUFFIXES.has(suffix);
 
       if (isZipResponse) {
         const parts = [];
@@ -175,7 +223,7 @@
           ` &nbsp;·&nbsp; see <code>_strand-report.txt</code> inside the zip.`;
         zipSummaryEl.hidden = false;
         showInfo("Done — your hairified zip is downloading.");
-      } else if (IMAGE_SUFFIXES.has(suffix)) {
+      } else if (previewSingleImage) {
         const url = URL.createObjectURL(blob);
         previewImg.src = url;
         previewEl.hidden = false;
@@ -216,6 +264,68 @@
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+
+  // --- Palette chip previews ---
+  // Each palette chip gets a small inline hair PNG fetched from /api/sample.
+  // Uses a fixed seed per palette so the chip preview is stable across reloads
+  // (caches well, doesn't flicker). Falls back silently if /api/sample is
+  // unreachable (e.g. when the HTML is opened from disk via a preview pane).
+  const PALETTE_SEEDS = {
+    dark: 1, brown: 2, blonde: 3, red: 4, grey: 5, white: 6, mixed: 7,
+  };
+  for (const chip of document.querySelectorAll(".palette-chip")) {
+    const value = chip.dataset.value;
+    const sample = chip.querySelector(".chip-sample");
+    if (!sample) continue;
+    const seed = PALETTE_SEEDS[value] ?? 1;
+    const url = `/api/sample?palette=${encodeURIComponent(value)}&seed=${seed}`;
+    // Probe by setting a background-image; if it 404s the chip just keeps its
+    // empty thumbnail. No console noise either way.
+    const probe = new Image();
+    probe.onload = () => { sample.style.backgroundImage = `url("${url}")`; };
+    probe.src = url;
+  }
+
+  // --- Paste a screenshot from the clipboard ---
+  document.addEventListener("paste", (e) => {
+    if (!e.clipboardData) return;
+    for (const item of e.clipboardData.items) {
+      if (item.kind === "file") {
+        const f = item.getAsFile();
+        if (f) {
+          // Browsers often give pasted screenshots names like "image.png"; that's fine.
+          setFiles([f]);
+          showInfo("Got it — pasted clipboard image is ready.");
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+  });
+
+  // --- Click-to-copy the seed ---
+  seedValueEl.title = "click to copy";
+  seedValueEl.addEventListener("click", async () => {
+    const text = seedValueEl.textContent || "";
+    if (!text || text === "—") return;
+    try {
+      await navigator.clipboard.writeText(text);
+      seedValueEl.classList.add("copied");
+      setTimeout(() => seedValueEl.classList.remove("copied"), 900);
+    } catch (_) {
+      // Clipboard API blocked (insecure context / old browser); leave silent.
+    }
+  });
+
+  // --- Keyboard: Enter to submit, R/S for re-roll ---
+  document.addEventListener("keydown", (e) => {
+    // Don't hijack typing in the suffix field or other text inputs.
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Enter" && !goBtn.disabled) { goBtn.click(); }
+    else if (e.key.toLowerCase() === "r" && !rerollNewBtn.disabled) { rerollNewBtn.click(); }
+    else if (e.key.toLowerCase() === "s" && !rerollSameBtn.disabled) { rerollSameBtn.click(); }
+  });
 
   // Initial state.
   rerollSameBtn.disabled = true;

@@ -3,10 +3,19 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Strand — drop a file, get hair</title>
-  <meta name="description" content="A tiny novelty filter that drops procedural hairs onto images, PDFs, and slide decks." />
-  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='52'>〰️</text></svg>" />
-  <link rel="stylesheet" href="/static/style.css" />
+  <title>Strand — drop a file, get a haired version</title>
+  <meta name="description" content="A novelty filter that drops procedural hairs onto images, PDFs, and slide decks. In-memory only — your files aren't stored or logged." />
+
+  <!-- Favicon: inline SVG of a single procedural-feeling strand. -->
+  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M 4 36 C 18 12, 32 56, 60 24' stroke='%231a1a1a' stroke-width='3' fill='none' stroke-linecap='round'/></svg>" />
+
+  <!-- Open Graph / Twitter — short, accurate. -->
+  <meta property="og:title" content="Strand — drop a file, get a haired version" />
+  <meta property="og:description" content="A novelty filter that drops procedural hairs onto images, PDFs, and slide decks." />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary" />
+
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <main class="wrap">
@@ -16,25 +25,29 @@
     </header>
 
     <section id="drop" class="drop">
-      <input type="file" id="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.pptx,.zip" hidden />
+      <input type="file" id="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.pptx,.zip" multiple hidden />
+      <input type="file" id="folder" webkitdirectory directory multiple hidden />
       <div class="drop-inner">
         <div class="drop-glyph">〰️</div>
         <div class="drop-text">
-          <strong>Drop a file here</strong>
-          <span>or click to pick one</span>
+          <strong>Drop files here</strong>
+          <span>or click to pick · paste a screenshot · <a href="#" id="pick-folder">pick a folder</a></span>
         </div>
-        <div class="drop-meta">PNG · JPG · GIF · BMP · WEBP · PDF · PPTX · ZIP &nbsp;·&nbsp; up to 25 MB</div>
+        <div class="drop-meta">PNG · JPG · GIF · BMP · WEBP · PDF · PPTX · ZIP &nbsp;·&nbsp; 25 MB total · drop multiple to get a zip back</div>
       </div>
     </section>
 
     <section class="controls" aria-label="Options">
       <fieldset>
         <legend>Palette</legend>
-        <div class="row" role="radiogroup" id="palette">
-          <button type="button" class="chip selected" data-value="dark" role="radio" aria-checked="true">Dark</button>
-          <button type="button" class="chip" data-value="mixed" role="radio" aria-checked="false">Mixed</button>
-          <button type="button" class="chip" data-value="blonde" role="radio" aria-checked="false">Blonde</button>
-          <button type="button" class="chip" data-value="grey" role="radio" aria-checked="false">Grey</button>
+        <div class="row wrap palette-row" role="radiogroup" id="palette">
+          <button type="button" class="chip palette-chip selected" data-value="dark" role="radio" aria-checked="true"><span class="chip-sample"></span><span class="chip-label">Dark</span></button>
+          <button type="button" class="chip palette-chip" data-value="brown" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Brown</span></button>
+          <button type="button" class="chip palette-chip" data-value="blonde" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Blonde</span></button>
+          <button type="button" class="chip palette-chip" data-value="red" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Red</span></button>
+          <button type="button" class="chip palette-chip" data-value="grey" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Grey</span></button>
+          <button type="button" class="chip palette-chip" data-value="white" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">White</span></button>
+          <button type="button" class="chip palette-chip" data-value="mixed" role="radio" aria-checked="false"><span class="chip-sample chip-sample--mixed"></span><span class="chip-label">Mixed</span></button>
         </div>
       </fieldset>
 
@@ -83,6 +96,6 @@
     </footer>
   </main>
 
-  <script src="/static/app.js" defer></script>
+  <script src="app.js" defer></script>
 </body>
 </html>

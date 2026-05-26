@@ -15,6 +15,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import math
 import os
@@ -28,6 +29,7 @@ from PIL import Image
 
 from .core import (
     INTENSITY_ORDER,
+    MORPHOLOGIES,
     PALETTE_NAMES,
     SUPPORTED_SUFFIXES,
     generate_hair,
@@ -193,6 +195,31 @@ def cmd_restore(args: argparse.Namespace) -> int:
     return 0 if missing == 0 else 1
 
 
+def cmd_sample(args: argparse.Namespace) -> int:
+    """Emit a single hair PNG to a path or stdout. Parity with /api/sample."""
+    rng = random.Random(args.seed)
+    morph = (args.morphology or "").lower().strip()
+    if morph:
+        if morph not in MORPHOLOGIES:
+            print(f"unknown morphology: {morph}. Choose from {sorted(MORPHOLOGIES)}.",
+                  file=sys.stderr)
+            return 2
+        hair = MORPHOLOGIES[morph](rng, palette=args.palette)
+    else:
+        hair = generate_hair(rng, palette=args.palette)
+
+    if str(args.output) == "-":
+        # Write PNG bytes to stdout (binary). Useful in shell pipelines.
+        buf = io.BytesIO()
+        hair.save(buf, format="PNG")
+        sys.stdout.buffer.write(buf.getvalue())
+    else:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        hair.save(args.output, format="PNG")
+        print(f"wrote 1 hair to {args.output}")
+    return 0
+
+
 def cmd_preview(args: argparse.Namespace) -> int:
     """Render a grid of sample hairs for visual inspection of a palette."""
     rng = random.Random(args.seed)
@@ -270,6 +297,18 @@ def build_parser() -> argparse.ArgumentParser:
     prv.add_argument("--count", type=int, default=12)
     prv.add_argument("--seed", type=int, default=None)
 
+    smp = sub.add_parser(
+        "sample",
+        help="Render a single hair PNG. Use '-' as output to write to stdout.",
+    )
+    smp.add_argument("output", type=Path)
+    smp.add_argument("--palette", choices=sorted(PALETTE_NAMES), default="dark")
+    smp.add_argument(
+        "--morphology", choices=sorted(MORPHOLOGIES), default=None,
+        help="Force a specific morphology. Default: random per the standard weights.",
+    )
+    smp.add_argument("--seed", type=int, default=None)
+
     return p
 
 
@@ -281,6 +320,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_restore(args)
     if args.cmd == "preview":
         return cmd_preview(args)
+    if args.cmd == "sample":
+        return cmd_sample(args)
     return 1
 
 

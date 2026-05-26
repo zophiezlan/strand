@@ -167,9 +167,84 @@ def _generate_loop_hair(rng, palette="dark", base_width=400, base_height=240):
     return _finalize(img, cw, ch)
 
 
-def generate_hair(rng: random.Random, palette: str = "dark", loop_chance: float = 0.18) -> Image.Image:
-    if rng.random() < loop_chance:
+def _generate_eyelash_hair(rng: random.Random, palette: str = "dark",
+                           base_width: int = 400, base_height: int = 120) -> Image.Image:
+    """A short, tightly curved hair — eyelash-like.
+
+    Drawn in a small region of a full-sized canvas, so when `_place` scales the
+    final image, an eyelash naturally ends up smaller on the page than a curve
+    or loop. (The transparent surround does the work.)
+    """
+    img, draw, cw, ch = _new_canvas(base_width, base_height)
+
+    cx = base_width * 0.5
+    cy = base_height * 0.5
+
+    span = rng.uniform(28, 50)
+    arc = rng.uniform(18, 32) * rng.choice([-1, 1])
+
+    p0 = _to_canvas(cx - span / 2, cy + rng.uniform(-2, 2))
+    p3 = _to_canvas(cx + span / 2, cy + rng.uniform(-2, 2))
+    p1 = _to_canvas(cx - span * 0.18, cy + arc)
+    p2 = _to_canvas(cx + span * 0.18, cy + arc * 0.85)
+
+    base_color = _random_hair_color(rng, palette)
+    _draw_bezier_segment(draw, p0, p1, p2, p3, base_color, rng,
+                         n_samples=120, width_start=1.9, width_end=1.0)
+    return _finalize(img, cw, ch)
+
+
+def _generate_fragment_hair(rng: random.Random, palette: str = "dark",
+                            base_width: int = 400, base_height: int = 120) -> Image.Image:
+    """A short broken piece of hair — fragmentary, less curved than an eyelash."""
+    img, draw, cw, ch = _new_canvas(base_width, base_height)
+
+    cx = base_width * 0.5
+    cy = base_height * 0.5
+
+    span = rng.uniform(45, 90)
+    bend = rng.uniform(-12, 12)
+
+    p0 = _to_canvas(cx - span / 2 + rng.uniform(-3, 3), cy + rng.uniform(-3, 3))
+    p3 = _to_canvas(cx + span / 2 + rng.uniform(-3, 3), cy + rng.uniform(-5, 5))
+    p1 = _to_canvas(cx - span * 0.2, cy + bend)
+    p2 = _to_canvas(cx + span * 0.2, cy + bend * 0.6 + rng.uniform(-4, 4))
+
+    base_color = _random_hair_color(rng, palette)
+    # Thinner than a full strand — fragments are wispy.
+    _draw_bezier_segment(draw, p0, p1, p2, p3, base_color, rng,
+                         n_samples=110, width_start=1.4, width_end=0.7)
+    return _finalize(img, cw, ch)
+
+
+# Public dispatch table — used by /api/sample to render a specific morphology
+# and by `generate_hair` for weighted random selection.
+MORPHOLOGIES: dict[str, "callable"] = {
+    "curve":    _generate_curve_hair,
+    "loop":     _generate_loop_hair,
+    "eyelash":  _generate_eyelash_hair,
+    "fragment": _generate_fragment_hair,
+}
+
+
+def generate_hair(
+    rng: random.Random,
+    palette: str = "dark",
+    loop_chance: float = 0.15,
+    eyelash_chance: float = 0.08,
+    fragment_chance: float = 0.08,
+) -> Image.Image:
+    """Pick a morphology by weighted random choice; default is the curved strand."""
+    r = rng.random()
+    cum = loop_chance
+    if r < cum:
         return _generate_loop_hair(rng, palette=palette)
+    cum += eyelash_chance
+    if r < cum:
+        return _generate_eyelash_hair(rng, palette=palette)
+    cum += fragment_chance
+    if r < cum:
+        return _generate_fragment_hair(rng, palette=palette)
     return _generate_curve_hair(rng, palette=palette)
 
 
@@ -265,6 +340,38 @@ def _place(rng, container_w, container_h, hair_w, hair_h, scale_range,
     return x, y, dw, dh
 
 
+def _morph_kwargs(opts) -> dict:
+    """Bundle morphology weights for a `generate_hair` call."""
+    return dict(
+        palette=opts.palette,
+        loop_chance=opts.loop_chance,
+        eyelash_chance=opts.eyelash_chance,
+        fragment_chance=opts.fragment_chance,
+    )
+
+
+def _buddy_offsets(rng, dw, dh, container_w, container_h, base_x, base_y,
+                   cluster_chance, max_buddies=2):
+    """
+    Roll up to `max_buddies` times for a buddy hair near (base_x, base_y).
+
+    Each roll succeeds with probability `cluster_chance`. A successful roll
+    yields an (x, y) offset within ~0.6× hair size of the seed position,
+    clamped to the container bounds. Lets real-world clumping show up
+    without requiring every hair to clump.
+    """
+    out = []
+    for _ in range(max_buddies):
+        if rng.random() >= cluster_chance:
+            break
+        ox = base_x + rng.uniform(-dw * 0.6, dw * 0.6)
+        oy = base_y + rng.uniform(-dh * 0.6, dh * 0.6)
+        ox = max(0, min(container_w - dw, ox))
+        oy = max(0, min(container_h - dh, oy))
+        out.append((ox, oy))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -303,7 +410,16 @@ class InjectOptions:
     palette: str = "dark"
     content_bias: float = 0.5
     scale_range: tuple[float, float] = (0.15, 0.45)
-    loop_chance: float = 0.18
+    # Morphology weights — what fraction of hairs are loops / eyelashes /
+    # fragments (the rest are the default curved strand). Defaults give a
+    # visible-but-not-dominant mix of variety.
+    loop_chance: float = 0.15
+    eyelash_chance: float = 0.08
+    fragment_chance: float = 0.08
+    # Probability that an already-placed hair gets a "buddy" placed nearby,
+    # rolled repeatedly per hair (so a single hair can be the head of a small
+    # tuft of 1–3). Real shed hair clumps; even spread looks artificial.
+    cluster_chance: float = 0.22
     # Always populated after construction (see __post_init__) so callers can
     # echo the seed back to the user for "re-strand with this seed".
     seed: int = field(default_factory=lambda: random.randrange(1, 2**31 - 1))
@@ -354,13 +470,19 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> bytes:
     regions = _image_content_regions(img)
 
     for _ in range(max(1, opts.image_count)):
-        hair = _rotate_hair(generate_hair(rng, palette=opts.palette,
-                                          loop_chance=opts.loop_chance), rng)
+        hair = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
         hw, hh = hair.size
         x, y, dw, dh = _place(rng, iw, ih, hw, hh, opts.scale_range,
                               regions=regions, content_bias=opts.content_bias)
-        hair = hair.resize((max(1, int(dw)), max(1, int(dh))), Image.LANCZOS)
-        img.alpha_composite(hair, (int(x), int(y)))
+        hair_sized = hair.resize((max(1, int(dw)), max(1, int(dh))), Image.LANCZOS)
+        img.alpha_composite(hair_sized, (int(x), int(y)))
+
+        for bx, by in _buddy_offsets(rng, dw, dh, iw, ih, x, y, opts.cluster_chance):
+            buddy = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
+            scale = rng.uniform(0.7, 1.0)
+            bw, bh = max(1, int(dw * scale)), max(1, int(dh * scale))
+            buddy = buddy.resize((bw, bh), Image.LANCZOS)
+            img.alpha_composite(buddy, (int(bx), int(by)))
 
     out = io.BytesIO()
     if suffix in (".jpg", ".jpeg"):
@@ -403,20 +525,33 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> bytes:
             pw = page.rect.width
             ph = page.rect.height
             for _ in range(per_page):
-                hair = _rotate_hair(generate_hair(rng, palette=opts.palette,
-                                                  loop_chance=opts.loop_chance), rng)
+                hair = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
                 hw, hh = hair.size
                 x, y, dw, dh = _place(rng, pw, ph, hw, hh, opts.scale_range,
                                       regions=regions, content_bias=opts.content_bias)
 
                 buf = io.BytesIO()
                 hair.save(buf, format="PNG")
+                hair_png = buf.getvalue()
                 page.insert_image(
                     fitz.Rect(x, y, x + dw, y + dh),
-                    stream=buf.getvalue(),
+                    stream=hair_png,
                     keep_proportion=False,
                     overlay=True,
                 )
+
+                for bx, by in _buddy_offsets(rng, dw, dh, pw, ph, x, y, opts.cluster_chance):
+                    buddy = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
+                    bs = rng.uniform(0.7, 1.0)
+                    bw_, bh_ = dw * bs, dh * bs
+                    bbuf = io.BytesIO()
+                    buddy.save(bbuf, format="PNG")
+                    page.insert_image(
+                        fitz.Rect(bx, by, bx + bw_, by + bh_),
+                        stream=bbuf.getvalue(),
+                        keep_proportion=False,
+                        overlay=True,
+                    )
 
         return doc.tobytes(garbage=4, deflate=True)
     finally:
@@ -447,8 +582,7 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> bytes:
             continue
         regions = _pptx_content_regions(slide)
         for _ in range(per_slide):
-            hair = _rotate_hair(generate_hair(rng, palette=opts.palette,
-                                              loop_chance=opts.loop_chance), rng)
+            hair = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
             hw, hh = hair.size
             x, y, dw, dh = _place(rng, sw, sh, hw, hh, opts.scale_range,
                                   regions=regions, content_bias=opts.content_bias)
@@ -457,6 +591,17 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> bytes:
             hair.save(buf, format="PNG")
             buf.seek(0)
             slide.shapes.add_picture(buf, int(x), int(y), width=int(dw), height=int(dh))
+
+            for bx, by in _buddy_offsets(rng, dw, dh, sw, sh, x, y, opts.cluster_chance):
+                buddy = _rotate_hair(generate_hair(rng, **_morph_kwargs(opts)), rng)
+                bs = rng.uniform(0.7, 1.0)
+                bbuf = io.BytesIO()
+                buddy.save(bbuf, format="PNG")
+                bbuf.seek(0)
+                slide.shapes.add_picture(
+                    bbuf, int(bx), int(by),
+                    width=int(dw * bs), height=int(dh * bs),
+                )
 
     out = io.BytesIO()
     prs.save(out)

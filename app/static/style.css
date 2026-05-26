@@ -110,6 +110,29 @@ legend {
   border-color: var(--selected);
 }
 
+/* Palette chips: small hair sample sits to the left of the label. */
+.palette-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px 6px 8px;
+}
+
+.chip-sample {
+  display: inline-block;
+  width: 44px;
+  height: 22px;
+  background: #f3efe7 center / contain no-repeat;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.palette-chip.selected .chip-sample {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.chip-label { line-height: 1; }
+
 /* Wild density tiers — same shape, slightly different idle tint so the joke reads. */
 .chip.wild {
   color: #6c4a3a;
@@ -216,7 +239,13 @@ legend {
   border-radius: 6px;
   color: var(--ink);
   font-size: 13px;
+  cursor: pointer;
+  user-select: all;
+  transition: background 200ms ease, color 200ms ease;
 }
+.result-meta code[title]:hover { background: #ebe6dc; }
+.result-meta code.copied { background: var(--accent); color: var(--accent-ink); }
+.result-meta code.copied::after { content: " ✓"; }
 
 .ghost {
   margin-left: auto;

@@ -1,192 +1,82 @@
-// Strand — Pyodide engine wrapper.
+// Strand — Pyodide engine (main-thread shim).
 //
-// Lazy-loads Pyodide on first call, installs Pillow + PyMuPDF + python-pptx,
-// fetches app/core.py from /core.py, and exposes a single async `run(...)`
-// that mirrors the FastAPI `POST /strand` route — same dispatch logic
-// (single file → strand_bytes; zip or multi-file → strand_zip_bytes), same
-// response shape (out bytes, download name, content type, seed, stats,
-// optional haired/skipped/errored counts).
+// The real Pyodide instance lives in a Web Worker (see pyodide_worker.js).
+// This module is a thin RPC client that exposes the same API the page used
+// before: prefetch / isReady / run / samplePng. Keeping Pyodide off the main
+// thread means the UI thread stays free during heavy work — the spinner
+// keeps animating, the status text keeps updating, scrolling still works,
+// and the browser never thinks the tab is hung. That matters for big pptx
+// files at high density, where Python can be busy for over a minute.
 //
-// The runtime is cached in-module so subsequent calls are instant.
+// Status messages emitted by the worker (boot phases, "Adding hair", etc.)
+// are broadcast to every currently-registered `onStatus` callback.
 
-const PYODIDE_VERSION = "0.29.4";
-const PYODIDE_INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+const WORKER_URL = "/pyodide_worker.js";
 
-// Python glue that owns the file-shape decisions. Same control flow as the
-// `strand()` handler in app/main.py — kept here so the JS side never has to
-// touch zip bundling, suffix application, or the unsupported-type rules.
-const ENGINE_PY = `
-from __future__ import annotations
-import io, zipfile
-from app import core
+let _worker = null;
+let _nextId = 1;
+const _pending = new Map();
+const _statusHandlers = new Set();
+let _isReady = false;
 
-_OUTPUT_CONTENT_TYPES = {
-    ".png":  "image/png",
-    ".jpg":  "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif":  "image/gif",
-    ".bmp":  "image/bmp",
-    ".webp": "image/webp",
-    ".pdf":  "application/pdf",
-    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    ".zip":  "application/zip",
+function ensureWorker() {
+  if (_worker) return _worker;
+  _worker = new Worker(WORKER_URL);
+  _worker.onmessage = (e) => {
+    const data = e.data || {};
+    if (data.type === "status") {
+      // The worker signals "Ready" once at the end of boot. We latch the
+      // ready flag here so synchronous callers (isReady()) get an accurate
+      // answer without having to await prefetch().
+      if (data.msg === "Ready") _isReady = true;
+      for (const h of _statusHandlers) {
+        try { h(data.msg); } catch { /* don't let a bad handler kill others */ }
+      }
+      return;
+    }
+    const pend = _pending.get(data.id);
+    if (!pend) return;
+    _pending.delete(data.id);
+    if (data.ok) pend.resolve(data.result);
+    else {
+      const err = new Error(data.error || "Engine error");
+      if (data.code != null) err.code = data.code;
+      pend.reject(err);
+    }
+  };
+  _worker.onerror = (e) => {
+    // If the worker itself dies (e.g. failed to load Pyodide), reject every
+    // in-flight RPC so callers see a real error instead of hanging forever.
+    const msg = e?.message || "Engine worker crashed.";
+    for (const pend of _pending.values()) pend.reject(new Error(msg));
+    _pending.clear();
+  };
+  return _worker;
 }
 
-class StrandError(Exception):
-    def __init__(self, msg, code=400):
-        super().__init__(msg); self.code = code
-
-def _bundle(items):
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as z:
-        for name, data in items:
-            safe = name.replace("\\\\", "/").lstrip("/")
-            if not safe:
-                continue
-            z.writestr(safe, data)
-    return buf.getvalue()
-
-def _common_root(names):
-    roots = set()
-    for n in names:
-        norm = n.replace("\\\\", "/")
-        if "/" not in norm:
-            return None
-        roots.add(norm.split("/", 1)[0])
-    return roots.pop() if len(roots) == 1 else None
-
-def run(items, *, palette, intensity, seed=None, name_suffix="-strand"):
-    """items: list[(name, bytes)]. Returns dict shaped for the JS caller."""
-    if not items:
-        raise StrandError("No file uploaded.", 400)
-
-    opts = core.options_from_ui(palette=palette, intensity=intensity, seed=seed)
-    suffix = name_suffix if name_suffix is not None else "-strand"
-
-    single = len(items) == 1
-    single_name, single_data = items[0] if single else (None, None)
-    single_ext = core._suffix_of(single_name) if single else None
-    single_is_zip = single and single_ext in core.ZIP_SUFFIXES
-
-    haired = skipped = errored = None
-
-    if single and not single_is_zip:
-        if single_ext not in core.SUPPORTED_SUFFIXES:
-            allowed = ", ".join(sorted(core.SUPPORTED_INCLUDING_ZIP))
-            raise StrandError(
-                f"Unsupported file type: {single_ext or '(none)'}. Supported: {allowed}.",
-                415,
-            )
-        out, stats = core.strand_bytes(single_data, single_name, opts)
-        out_ext = single_ext
-        out_name = core._apply_suffix(single_name, suffix)
-    else:
-        if single_is_zip:
-            payload = single_data
-            base = single_name
-        else:
-            payload = _bundle(items)
-            root = _common_root([n for n, _ in items])
-            base = (root or "files") + ".zip"
-        out, report = core.strand_zip_bytes(payload, opts, name_suffix=suffix)
-        stats = report.get("stats")
-        haired = report["haired_count"]
-        skipped = report["skipped_count"]
-        errored = report["error_count"]
-        out_ext = ".zip"
-        out_name = core._apply_suffix(base, suffix)
-
-    return {
-        "out_bytes": out,
-        "out_name": out_name,
-        "content_type": _OUTPUT_CONTENT_TYPES.get(out_ext, "application/octet-stream"),
-        "seed": opts.seed,
-        "stats": stats,
-        "haired": haired,
-        "skipped": skipped,
-        "errored": errored,
-    }
-
-def sample_hair_png(palette, morphology=None, seed=None):
-    """Return one hair PNG on transparent background. Powers the chip previews."""
-    import random
-    rng = random.Random(seed) if seed is not None else random.Random()
-    pal = (palette or "").lower().strip() or "dark"
-    if pal not in core.PALETTE_NAMES:
-        raise StrandError(f"unknown palette: {palette!r}", 400)
-    morph = (morphology or "").lower().strip() or None
-    if morph:
-        if morph not in core.MORPHOLOGIES:
-            raise StrandError(f"unknown morphology: {morph!r}", 400)
-        img = core.MORPHOLOGIES[morph](rng, palette=pal)
-    else:
-        img = core.generate_hair(rng, palette=pal)
-    buf = io.BytesIO(); img.save(buf, format="PNG")
-    return buf.getvalue()
-`;
-
-let _bootPromise = null;
-let _pyodide = null;
-
-async function _injectPyodideScript() {
-  if (window.loadPyodide) return;
-  await new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = PYODIDE_INDEX_URL + "pyodide.js";
-    s.onload = resolve;
-    s.onerror = () => reject(new Error("Failed to load Pyodide runtime."));
-    document.head.appendChild(s);
+function call(op, payload, transfer = []) {
+  const w = ensureWorker();
+  const id = _nextId++;
+  return new Promise((resolve, reject) => {
+    _pending.set(id, { resolve, reject });
+    w.postMessage({ id, op, payload }, transfer);
   });
 }
 
-async function _boot(onStatus) {
-  onStatus("Loading engine (one-time ~10 MB)…");
-  await _injectPyodideScript();
-  const py = await window.loadPyodide({ indexURL: PYODIDE_INDEX_URL });
-
-  onStatus("Loading image libraries…");
-  await py.loadPackage(["Pillow", "pymupdf", "lxml", "micropip"]);
-
-  onStatus("Installing python-pptx…");
-  await py.runPythonAsync(`
-import micropip
-await micropip.install("python-pptx")
-`);
-
-  onStatus("Fetching renderer…");
-  const coreSrc = await (await fetch("/core.py", { cache: "no-cache" })).text();
-  py.FS.mkdir("/app");
-  py.FS.writeFile("/app/__init__.py", "");
-  py.FS.writeFile("/app/core.py", coreSrc);
-  py.FS.writeFile("/app/engine.py", ENGINE_PY);
-
-  await py.runPythonAsync(`
-import sys
-if "/" not in sys.path: sys.path.insert(0, "/")
-from app import engine as _strand_engine  # warm import
-`);
-
-  onStatus("Ready");
-  _pyodide = py;
-  return py;
-}
-
-/** Kick off the boot now (idempotent). Returns a promise that resolves to the
- *  Pyodide instance. The first caller drives the boot; subsequent callers
- *  attach to the same promise. */
+/** Kick off the worker boot now (idempotent). Resolves once Pyodide and the
+ *  Python engine module are loaded and ready. */
 export function prefetch(onStatus = () => {}) {
-  if (_pyodide) return Promise.resolve(_pyodide);
-  if (!_bootPromise) _bootPromise = _boot(onStatus);
-  return _bootPromise;
+  _statusHandlers.add(onStatus);
+  return call("prefetch", {}).finally(() => _statusHandlers.delete(onStatus));
 }
 
-/** True once Pyodide has finished booting. */
+/** True once Pyodide has finished booting in the worker. */
 export function isReady() {
-  return _pyodide !== null;
+  return _isReady;
 }
 
 /**
- * Run the strand pipeline in-browser.
+ * Run the strand pipeline in the worker.
  *
  * @param {object} args
  * @param {Array<{name: string, bytes: ArrayBuffer|Uint8Array}>} args.files
@@ -198,88 +88,41 @@ export function isReady() {
  * @returns {Promise<{bytes: Uint8Array, name: string, contentType: string, seed: number, stats: object|null, haired: number|null, skipped: number|null, errored: number|null}>}
  */
 export async function run({ files, palette, intensity, seed = null, nameSuffix = null, onStatus = () => {} }) {
-  const py = await prefetch(onStatus);
-
-  // Normalize: each file becomes a (name, Uint8Array) pair on the Python side.
-  // Uint8Array .to_py() in Pyodide hands you a memoryview that bytes() accepts.
-  const items = files.map((f) => ({
-    name: f.name,
-    bytes: f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes),
-  }));
-
-  // Pyodide's toPy() leaves nested JS `null` as `JsNull` (not Python None),
-  // which breaks `is None` checks downstream. Simplest workaround: only
-  // include keys whose values are present, and let Python `.get()` supply None.
-  const argsObj = { items, palette, intensity };
-  if (seed !== null && seed !== undefined) argsObj.seed = seed;
-  if (nameSuffix !== null && nameSuffix !== undefined) argsObj.name_suffix = nameSuffix;
-  const argsProxy = py.toPy(argsObj);
-  py.globals.set("_args", argsProxy);
-
-  const result = await py.runPythonAsync(`
-from app.engine import run as _run, StrandError
-try:
-    _items = [(it["name"], bytes(it["bytes"])) for it in _args["items"]]
-    _seed_v = _args.get("seed")
-    if _seed_v == "" or _seed_v is None:
-        _seed_v = None
-    else:
-        _seed_v = int(_seed_v)
-    _suffix_v = _args.get("name_suffix")
-    if _suffix_v is not None:
-        _suffix_v = str(_suffix_v)
-    _result = _run(_items,
-                   palette=str(_args["palette"]),
-                   intensity=str(_args["intensity"]),
-                   seed=_seed_v,
-                   name_suffix=_suffix_v)
-    _result["ok"] = True
-except StrandError as e:
-    _result = {"ok": False, "error": str(e), "code": e.code}
-except Exception as e:
-    _result = {"ok": False, "error": f"{type(e).__name__}: {e}", "code": 500}
-_result
-`);
-  argsProxy.destroy();
-
-  const r = result.toJs({ dict_converter: Object.fromEntries });
-  result.destroy();
-
-  if (!r.ok) {
-    const err = new Error(r.error);
-    err.code = r.code;
-    throw err;
+  _statusHandlers.add(onStatus);
+  try {
+    // Normalise to Uint8Array so the worker receives a consistent shape.
+    const items = files.map((f) => ({
+      name: f.name,
+      bytes: f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes),
+    }));
+    const result = await call("run", { files: items, palette, intensity, seed, nameSuffix });
+    if (!result || !result.ok) {
+      const err = new Error(result?.error || "Engine error");
+      if (result?.code != null) err.code = result.code;
+      throw err;
+    }
+    return {
+      bytes: result.out_bytes,
+      name: result.out_name,
+      contentType: result.content_type,
+      seed: result.seed,
+      stats: result.stats,
+      haired: result.haired,
+      skipped: result.skipped,
+      errored: result.errored,
+      // PDF preview pair (Uint8Arrays of PNG bytes). Both null for other
+      // input types — only PDFs currently get a rasterised before/after.
+      previewBefore: result.preview_before || null,
+      previewAfter: result.preview_after || null,
+    };
+  } finally {
+    _statusHandlers.delete(onStatus);
   }
-
-  return {
-    bytes: r.out_bytes,
-    name: r.out_name,
-    contentType: r.content_type,
-    seed: r.seed,
-    stats: r.stats,
-    haired: r.haired,
-    skipped: r.skipped,
-    errored: r.errored,
-  };
 }
 
-/** Render a single hair PNG on transparent background. Used by the chip
- *  previews on the landing page. */
+/** Render a single hair PNG on transparent background. Kept for parity with
+ *  the older engine API; not currently called from the page (the drop-zone
+ *  hair uses the server's /api/sample endpoint). */
 export async function samplePng({ palette, morphology = null, seed = null }) {
-  const py = await prefetch();
-  const obj = { palette };
-  if (morphology !== null && morphology !== undefined) obj.morphology = morphology;
-  if (seed !== null && seed !== undefined) obj.seed = seed;
-  const proxy = py.toPy(obj);
-  py.globals.set("_sample_args", proxy);
-  const result = await py.runPythonAsync(`
-from app.engine import sample_hair_png
-sample_hair_png(str(_sample_args["palette"]),
-                morphology=(str(_sample_args["morphology"]) if "morphology" in _sample_args else None),
-                seed=(int(_sample_args["seed"]) if "seed" in _sample_args else None))
-`);
-  proxy.destroy();
-  const u8 = result.toJs();
-  result.destroy();
-  return u8;
+  return await call("sample", { palette, morphology, seed });
 }

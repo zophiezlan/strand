@@ -333,6 +333,19 @@ legend {
 }
 
 .status.error { border-color: var(--error); color: var(--error); }
+/* Subtle "running here" tag that follows the working message. Lives in a
+   span so the parent ::after spinner doesn't collide with it. */
+.status-runtime {
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  color: var(--ink-soft);
+  background: var(--panel-soft);
+  vertical-align: 1px;
+}
 .status.working::after {
   content: "";
   display: inline-block;
@@ -464,6 +477,10 @@ legend {
   -webkit-user-select: none;
   transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
 }
+/* The [hidden] attribute alone is too weak to win against `.compare`'s
+   explicit display: block. Without this rule the button stayed visible for
+   pptx/zip/PDF outputs even though the JS set hidden=true. */
+.compare[hidden] { display: none; }
 .compare:hover { border-color: var(--line-strong); background: var(--drop-hover-bg); }
 .compare.peeking,
 .compare:active {

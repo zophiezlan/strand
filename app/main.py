@@ -73,12 +73,25 @@ def index():
 # server uses. Single source of truth: keep all rendering behaviour in core.py;
 # both the server-side path and the in-browser Pyodide path read from this file.
 _CORE_PY = Path(__file__).parent / "core.py"
+_ENGINE_PY = Path(__file__).parent / "engine.py"
 
 
 @app.get("/core.py")
 def core_py():
     return FileResponse(
         _CORE_PY,
+        media_type="text/x-python",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+# The Pyodide worker's file-shape glue (zip bundling, suffix application,
+# unsupported-type rules). Lives as a real .py file so editors lint it
+# instead of treating it as a string literal inside the worker JS.
+@app.get("/engine.py")
+def engine_py():
+    return FileResponse(
+        _ENGINE_PY,
         media_type="text/x-python",
         headers={"Cache-Control": "no-cache"},
     )

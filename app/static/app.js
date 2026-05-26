@@ -12,7 +12,6 @@ import * as engine from "/pyodide_engine.js";
   const previewImg = document.getElementById("preview-img");
   const seedValueEl = document.getElementById("seed-value");
   const rerollSameBtn = document.getElementById("reroll-same");
-  const rerollNewBtn = document.getElementById("reroll-new");
   const downloadBtn = document.getElementById("download");
   const compareBtn = document.getElementById("compare");
   const zipSummaryEl = document.getElementById("zip-summary");
@@ -181,14 +180,34 @@ import * as engine from "/pyodide_engine.js";
       name: fileRelPath(f),
       bytes: new Uint8Array(await f.arrayBuffer()),
     })));
+    const kickoff = kickoffMessage(currentFiles, intensity);
     return engine.run({
       files: fileBuffers,
       palette,
       intensity,
       seed,
       nameSuffix,
-      onStatus: (msg) => showWorking(msg.startsWith("Ready") ? "Adding hair" : msg),
+      onStatus: (msg) => showWorking(
+        msg === "Ready" || msg === "Adding hair" ? kickoff : msg
+      ),
     });
+  }
+
+  // The Pyodide engine runs in a worker so the page stays responsive, but
+  // big decks at wild densities can still take a minute or two of CPU. If
+  // the user has signed up for that combination, set expectations up front
+  // so the spinner doesn't feel mysterious.
+  function kickoffMessage(files, intensity) {
+    const wild = intensity === "hirsute" || intensity === "werewolf" || intensity === "cousin-itt";
+    const heavy = files.some((f) => {
+      const s = suffixOf(f.name);
+      return s === ".pdf" || s === ".pptx" || s === ".zip";
+    });
+    if (wild && heavy) return "Adding hair — a dense deck takes a minute or two";
+    if (wild) return "Adding hair — this one's a lot";
+    if (heavy && files.length > 1) return "Adding hair across your files";
+    if (heavy) return "Adding hair through the pages";
+    return "Adding hair";
   }
 
   async function runViaServer({ palette, intensity, seed, nameSuffix }) {
@@ -245,7 +264,9 @@ import * as engine from "/pyodide_engine.js";
     }
 
     currentFiles = accepted;
-    lastSeed = null;
+    // Keep lastSeed across uploads — the Mix code is the seed for the *next*
+    // run, and "Do that one again" should let you apply it to a freshly
+    // dropped file. Clearing it here was what made the button feel redundant.
     dropZone.classList.add("has-file");
     warmEngine();
 
@@ -255,7 +276,21 @@ import * as engine from "/pyodide_engine.js";
 
     goBtn.disabled = false;
     hideStatus();
-    resultEl.hidden = true;
+
+    // The preview / stats / download from the prior run no longer match the
+    // new upload. Hide the parts that lie, keep the result panel itself
+    // visible so the Mix code + "Do that one again" stay reachable.
+    previewEl.hidden = true;
+    zipSummaryEl.hidden = true;
+    statsEl.hidden = true;
+    compareBtn.hidden = true;
+    downloadBtn.disabled = true;
+    lastResultBlob = null;
+    lastResultName = null;
+    if (lastPreviewUrl) { URL.revokeObjectURL(lastPreviewUrl); lastPreviewUrl = null; }
+    if (lastOriginalUrl) { URL.revokeObjectURL(lastOriginalUrl); lastOriginalUrl = null; }
+    resultEl.hidden = lastSeed == null;
+    rerollSameBtn.disabled = lastSeed == null;
   }
 
   function describeSelection(accepted, totalBytes, originalCount) {
@@ -284,7 +319,16 @@ import * as engine from "/pyodide_engine.js";
   function showWorking(msg) {
     statusEl.hidden = false;
     statusEl.className = "status working";
-    statusEl.textContent = msg;
+    // Tag every "working" message with where the work is happening. The
+    // server-mode toggle hides in settings, so without this indicator a user
+    // who'd left it on weeks ago would have no on-screen clue that their file
+    // is being uploaded rather than processed locally.
+    statusEl.innerHTML = "";
+    statusEl.append(document.createTextNode(msg));
+    const runtime = document.createElement("span");
+    runtime.className = "status-runtime";
+    runtime.textContent = useServerCheckbox.checked ? "on the server" : "in your browser";
+    statusEl.append(runtime);
   }
 
   function showInfo(msg) {
@@ -304,7 +348,6 @@ import * as engine from "/pyodide_engine.js";
     if (!currentFiles.length) return;
     goBtn.disabled = true;
     rerollSameBtn.disabled = true;
-    rerollNewBtn.disabled = true;
     downloadBtn.disabled = true;
     previewEl.hidden = true;
     zipSummaryEl.hidden = true;
@@ -321,7 +364,7 @@ import * as engine from "/pyodide_engine.js";
     }
     lastResultBlob = null;
     lastResultName = null;
-    showWorking("Adding hair");
+    showWorking(kickoffMessage(currentFiles, intensity));
 
     try {
       // Blank input → no suffix (keep original filename). Anything else is
@@ -361,6 +404,8 @@ import * as engine from "/pyodide_engine.js";
       resultEl.hidden = false;
 
       const previewSingleImage = currentFiles.length === 1 && IMAGE_SUFFIXES.has(suffix);
+      const previewPdf = currentFiles.length === 1 && suffix === ".pdf"
+        && result.previewAfter && result.previewBefore;
 
       if (isZipResponse) {
         const parts = [];
@@ -380,6 +425,16 @@ import * as engine from "/pyodide_engine.js";
         previewEl.hidden = false;
         compareBtn.hidden = false;
         showInfo("Done. How does it look?");
+      } else if (previewPdf) {
+        // PDFs come back with a before/after pair of PNGs — one of the page
+        // that picked up the first round of hairs. Same compare flow as
+        // images, just sourced from the engine rather than the original file.
+        lastPreviewUrl = URL.createObjectURL(new Blob([result.previewAfter], { type: "image/png" }));
+        lastOriginalUrl = URL.createObjectURL(new Blob([result.previewBefore], { type: "image/png" }));
+        previewImg.src = lastPreviewUrl;
+        previewEl.hidden = false;
+        compareBtn.hidden = false;
+        showInfo("Done. How does it look?");
       } else {
         showInfo("Done — ready when you are.");
       }
@@ -388,14 +443,12 @@ import * as engine from "/pyodide_engine.js";
     } finally {
       goBtn.disabled = false;
       rerollSameBtn.disabled = lastSeed == null;
-      rerollNewBtn.disabled = false;
       downloadBtn.disabled = lastResultBlob == null;
     }
   }
 
   goBtn.addEventListener("click", () => submit({ reuseSeed: false }));
   rerollSameBtn.addEventListener("click", () => submit({ reuseSeed: true }));
-  rerollNewBtn.addEventListener("click", () => submit({ reuseSeed: false }));
   downloadBtn.addEventListener("click", () => {
     if (lastResultBlob && lastResultName) {
       triggerDownload(lastResultBlob, lastResultName);
@@ -449,58 +502,77 @@ import * as engine from "/pyodide_engine.js";
 
     const lines = [];
 
-    // Line 1: totals + pages + clusters.
-    const totalsBits = [`${total} ${pluralize("hair", total)}`];
-    if (pages > 1) totalsBits.push(`across ${pages} pages`);
-    if (clusters > 0) totalsBits.push(`in ${clusters} ${pluralize("clump", clusters)}`);
-    lines.push(totalsBits.join(" ") + ".");
+    // The stats panel is meant to read like a quick recap of what happened,
+    // not a table of numbers. Each line is one beat: how many landed, what
+    // kinds, what colour, how long, how many found content, and the canvas
+    // they were laid on. The voice should match the rest of the app — light,
+    // a little theatrical, never clinical.
 
-    // Line 2: morphology breakdown. Omit when only one morphology was drawn.
-    if (morphs.length === 1 && morphs[0][1] === total) {
-      lines.push(`Type: ${pluralize(morphs[0][0], total)}.`);
-    } else if (morphs.length > 1) {
-      const parts = morphs.map(([name, n]) => `${n} ${pluralize(name, n)}`);
-      lines.push(`Types: ${parts.join(", ")}.`);
+    // Line 1: scene-set with the totals.
+    if (total === 1) {
+      lines.push("Just the one hair.");
+    } else {
+      let s = `${total} hairs`;
+      if (pages > 1) s += ` across ${pages} pages`;
+      if (clusters > 0) {
+        s += clusters === 1 ? ", all huddled together" : `, in ${clusters} clumps`;
+      }
+      lines.push(s + ".");
     }
 
-    // Line 3: colour breakdown.
+    // Line 2: morphology — pick out the dominant type, then "with a, b, c".
+    if (morphs.length === 1 && morphs[0][1] === total) {
+      if (total === 1) {
+        lines.push(`A single ${morphs[0][0]}.`);
+      } else {
+        lines.push(`All ${pluralize(morphs[0][0], total)}.`);
+      }
+    } else if (morphs.length > 1) {
+      const [headName, headN] = morphs[0];
+      const rest = morphs.slice(1).map(([name, n]) => `${n} ${pluralize(name, n)}`);
+      lines.push(`Mostly ${pluralize(headName, headN)} (${headN}), with ${joinList(rest)}.`);
+    }
+
+    // Line 3: colour.
     if (palettes.length === 1) {
-      lines.push(`Colour: ${palettes[0][0]}.`);
+      lines.push(total === 1 ? `One ${palettes[0][0]} strand.` : `All ${palettes[0][0]}.`);
     } else if (palettes.length > 1) {
       const parts = palettes.map(([name, n]) => `${n} ${name}`);
-      lines.push(`Colours: ${parts.join(", ")}.`);
+      lines.push(`A mix: ${joinList(parts)}.`);
     }
 
     // Line 4: physical hair lengths. Concrete proof the cm-sizing is real.
-    // For a single hair we just show its length; for many, show range + median.
     if (lengths.length === 1) {
-      lines.push(`Length: ${lengths[0].toFixed(1)} cm.`);
+      lines.push(`${lengths[0].toFixed(1)} cm long.`);
     } else if (lengths.length > 1) {
       const sorted = [...lengths].sort((a, b) => a - b);
       const min = sorted[0];
       const max = sorted[sorted.length - 1];
       const median = sorted[Math.floor(sorted.length / 2)];
-      lines.push(`Lengths: ${min.toFixed(1)}–${max.toFixed(1)} cm (median ${median.toFixed(1)}).`);
+      lines.push(`${min.toFixed(1)} to ${max.toFixed(1)} cm long, median ${median.toFixed(1)}.`);
     }
 
-    // Line 5: how many landed on detected content vs blank margin.
-    // Buddies don't roll their own content bias, so the denominator is
-    // primary hairs only — total minus buddies (= total - extras-from-clusters).
-    // Approximation: hairs minus (cluster contributions). We don't track
-    // buddies-per-cluster individually, so use total as the denominator and
-    // surface it as a rate.
+    // Line 5: aim. Frame it as the story — how many found something to land
+    // on vs. how many drifted into the margin.
     if (total > 1 && contentHits > 0) {
-      lines.push(`${contentHits} of ${total} landed on content.`);
+      const missed = total - contentHits;
+      if (missed === 0) {
+        lines.push(`Every one landed on something.`);
+      } else if (missed === 1) {
+        lines.push(`${contentHits} of ${total} landed on content; one drifted into the margin.`);
+      } else {
+        lines.push(`${contentHits} of ${total} landed on content; the other ${missed} hit blank space.`);
+      }
     }
 
-    // Line 6: substrate — physical dimensions of the file we just haired.
+    // Line 6: canvas — physical dimensions of the file we just haired.
     if (substrate) {
       const nat = `${formatNative(substrate)}`;
       const cm = `${substrate.width_cm} × ${substrate.height_cm} cm`;
-      const extra = substrate.page_count ? ` · ${substrate.page_count} pages`
-                  : substrate.slide_count ? ` · ${substrate.slide_count} slides`
+      const depth = substrate.page_count ? `, ${substrate.page_count} pages deep`
+                  : substrate.slide_count ? `, ${substrate.slide_count} slides deep`
                   : "";
-      lines.push(`Substrate: ${nat} (≈${cm})${extra}.`);
+      lines.push(`All this on a ${nat} canvas (≈${cm})${depth}.`);
     }
 
     statsLineEl.innerHTML = lines
@@ -535,7 +607,18 @@ import * as engine from "/pyodide_engine.js";
 
   function pluralize(word, n) {
     if (n === 1) return word;
+    // Words ending in s/x/z/sh/ch need "es" — covers "eyelash" → "eyelashes".
+    if (/(s|x|z|sh|ch)$/.test(word)) return word + "es";
     return word + "s";
+  }
+
+  // Comma-separated list with an Oxford "and" before the last item.
+  // ["a"] → "a"; ["a","b"] → "a and b"; ["a","b","c"] → "a, b, and c".
+  function joinList(items) {
+    if (items.length === 0) return "";
+    if (items.length === 1) return items[0];
+    if (items.length === 2) return `${items[0]} and ${items[1]}`;
+    return `${items.slice(0, -1).join(", ")}, and ${items[items.length - 1]}`;
   }
 
   function escapeHtml(s) {
@@ -596,7 +679,8 @@ import * as engine from "/pyodide_engine.js";
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (e.key === "Enter" && !goBtn.disabled) { goBtn.click(); }
-    else if (e.key.toLowerCase() === "r" && !rerollNewBtn.disabled) { rerollNewBtn.click(); }
+    // "R" picks a fresh seed — same effect as Strand it, kept as a shortcut.
+    else if (e.key.toLowerCase() === "r" && !goBtn.disabled) { goBtn.click(); }
     else if (e.key.toLowerCase() === "s" && !rerollSameBtn.disabled) { rerollSameBtn.click(); }
   });
 
@@ -721,6 +805,5 @@ import * as engine from "/pyodide_engine.js";
 
   // Initial state.
   rerollSameBtn.disabled = true;
-  rerollNewBtn.disabled = true;
   downloadBtn.disabled = true;
 })();

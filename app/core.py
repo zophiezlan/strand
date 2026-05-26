@@ -867,6 +867,11 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
         if not any(page_hit):
             page_hit[rng.randrange(page_count)] = True
 
+        # Record the first page that picked up hair so the UI can render a
+        # meaningful before/after preview — showing a blank page from a 50-page
+        # PDF would defeat the whole point.
+        stats["preview_page"] = next(i for i, hit in enumerate(page_hit) if hit)
+
         per_page = max(1, opts.hairs_per_page)
         for i, do_it in enumerate(page_hit):
             if not do_it:
@@ -925,6 +930,27 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
                     stats["clusters"] += 1
 
         return doc.tobytes(garbage=4, deflate=True), stats
+    finally:
+        doc.close()
+
+
+def render_pdf_page_png(pdf_bytes: bytes, page_index: int = 0, max_pixels: int = 1400) -> bytes:
+    """Rasterise one PDF page to PNG. Used to build the before/after preview
+    pair shown in the in-browser result panel — the page that picked up the
+    first round of hairs is the one worth showing. PyMuPDF renders a page in
+    a few ms even at preview resolution. `max_pixels` caps the larger output
+    dimension so the preview reads cleanly in the narrow result column."""
+    import fitz
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        if page_index < 0 or page_index >= doc.page_count:
+            page_index = 0
+        page = doc[page_index]
+        w = max(page.rect.width, 1.0)
+        h = max(page.rect.height, 1.0)
+        scale = min(max_pixels / w, max_pixels / h)
+        pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+        return pix.tobytes("png")
     finally:
         doc.close()
 

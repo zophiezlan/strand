@@ -227,6 +227,37 @@ MORPHOLOGIES: dict[str, "callable"] = {
 }
 
 
+# Real-world length ranges per morphology, in centimetres. Used by `_place`
+# together with the substrate's units-per-cm to size each hair to a physically
+# plausible length — a head-hair strand is 3-12 cm long whether it lands on a
+# passport photo or an A4 scan, an eyelash is always tiny.
+MORPHOLOGY_LENGTH_CM: dict[str, tuple[float, float]] = {
+    "curve":    (3.0, 12.0),
+    "loop":     (5.0, 18.0),
+    "eyelash":  (0.7, 1.4),
+    "fragment": (1.5, 4.0),
+}
+
+# Substrate unit conversions per centimetre.
+_POINTS_PER_CM = 72.0 / 2.54        # PDFs use points (72 pt = 1 in)
+_EMU_PER_CM = 914400.0 / 2.54       # pptx uses EMU (914400 EMU = 1 in)
+_DEFAULT_DPI = 96                   # screen-typical fallback for images
+# Soft cap to keep absurdly high DPI metadata (e.g. 1200 dpi on a phone
+# screenshot) from producing tiny hairs that don't read as hairs.
+_MAX_IMAGE_DPI = 300
+
+
+def _image_pixels_per_cm(img: Image.Image) -> float:
+    """Read DPI from PIL image metadata; fall back to 96 and cap at 300."""
+    dpi_info = img.info.get("dpi")
+    if dpi_info and isinstance(dpi_info, tuple) and dpi_info[0]:
+        dpi = float(dpi_info[0])
+    else:
+        dpi = float(_DEFAULT_DPI)
+    dpi = min(dpi, _MAX_IMAGE_DPI)
+    return dpi / 2.54
+
+
 def generate_hair_with_morphology(
     rng: random.Random,
     palette: str = "dark",
@@ -371,11 +402,22 @@ def _pptx_content_regions(slide):
     return regions
 
 
-def _place(rng, container_w, container_h, hair_w, hair_h, scale_range,
+def _place(rng, container_w, container_h, hair_w, hair_h,
+           length_range_cm, units_per_cm,
            regions=None, content_bias: float = 0.5):
-    target_long_frac = rng.uniform(*scale_range)
+    """Pick a position + size for one hair, sized to a real-world length.
+
+    `length_range_cm` is the (min, max) physical length in centimetres for the
+    morphology; `units_per_cm` converts cm into the substrate's native units
+    (pixels for images, points for PDFs, EMU for pptx). The hair's longest
+    edge is sized to a random length in that range, then clamped to <= 90% of
+    the container's short side so a hair on a thumbnail can't dominate it.
+    """
+    target_length_cm = rng.uniform(*length_range_cm)
+    target_long = target_length_cm * units_per_cm
     short_side = min(container_w, container_h)
-    target_long = short_side * target_long_frac
+    # Don't let a hair eat the whole substrate (thumbnails, narrow strips).
+    target_long = min(target_long, short_side * 0.9)
     scale = target_long / max(hair_w, hair_h)
     dw = hair_w * scale
     dh = hair_h * scale
@@ -476,7 +518,6 @@ class InjectOptions:
     image_count: int = 2
     palette: str = "white"
     content_bias: float = 0.5
-    scale_range: tuple[float, float] = (0.15, 0.45)
     # Morphology weights — what fraction of hairs are loops / eyelashes /
     # fragments (the rest are the default curved strand). Defaults give a
     # visible-but-not-dominant mix of variety.
@@ -537,6 +578,7 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> tuple[b
 
     iw, ih = img.size
     regions = _image_content_regions(img)
+    units_per_cm = _image_pixels_per_cm(img)
 
     for _ in range(max(1, opts.image_count)):
         hair, morph, color = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
@@ -545,7 +587,8 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> tuple[b
         stats["morphologies"][morph] += 1
         _bump(stats["palettes"], color)
         hw, hh = hair.size
-        x, y, dw, dh = _place(rng, iw, ih, hw, hh, opts.scale_range,
+        x, y, dw, dh = _place(rng, iw, ih, hw, hh,
+                              MORPHOLOGY_LENGTH_CM[morph], units_per_cm,
                               regions=regions, content_bias=opts.content_bias)
         hair_sized = hair.resize((max(1, int(dw)), max(1, int(dh))), Image.LANCZOS)
         img.alpha_composite(hair_sized, (int(x), int(y)))
@@ -614,7 +657,8 @@ def inject_pdf_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
                 stats["morphologies"][morph] += 1
                 _bump(stats["palettes"], color)
                 hw, hh = hair.size
-                x, y, dw, dh = _place(rng, pw, ph, hw, hh, opts.scale_range,
+                x, y, dw, dh = _place(rng, pw, ph, hw, hh,
+                                      MORPHOLOGY_LENGTH_CM[morph], _POINTS_PER_CM,
                                       regions=regions, content_bias=opts.content_bias)
 
                 buf = io.BytesIO()
@@ -685,7 +729,8 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
             stats["morphologies"][morph] += 1
             _bump(stats["palettes"], color)
             hw, hh = hair.size
-            x, y, dw, dh = _place(rng, sw, sh, hw, hh, opts.scale_range,
+            x, y, dw, dh = _place(rng, sw, sh, hw, hh,
+                                  MORPHOLOGY_LENGTH_CM[morph], _EMU_PER_CM,
                                   regions=regions, content_bias=opts.content_bias)
 
             buf = io.BytesIO()
@@ -817,7 +862,6 @@ def strand_zip_bytes(
                 image_count=opts.image_count,
                 palette=opts.palette,
                 content_bias=opts.content_bias,
-                scale_range=opts.scale_range,
                 loop_chance=opts.loop_chance,
                 eyelash_chance=opts.eyelash_chance,
                 fragment_chance=opts.fragment_chance,

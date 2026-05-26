@@ -644,6 +644,84 @@ def test_clusters_can_increase_hair_count(pdf_bytes):
     assert total_images(0.95) > total_images(0.0)
 
 
+# --- DPI / cm-based sizing -------------------------------------------------
+
+def test_eyelash_is_smaller_than_curve_on_same_canvas():
+    """The per-morphology cm range should make eyelashes (0.7-1.4 cm) visibly
+    smaller than full curves (3-12 cm) when both land on the same substrate."""
+    import random
+    from app.core import (
+        MORPHOLOGY_LENGTH_CM,
+        _image_pixels_per_cm,
+        _place,
+        _generate_curve_hair,
+        _generate_eyelash_hair,
+    )
+
+    img = Image.new("RGBA", (1000, 1000), (255, 255, 255, 255))
+    units = _image_pixels_per_cm(img)
+
+    curve = _generate_curve_hair(random.Random(1))
+    eye = _generate_eyelash_hair(random.Random(1))
+
+    # Run _place many times and compare median sizes — RNG variance otherwise.
+    def median_long(hair, range_cm):
+        sizes = []
+        for s in range(50):
+            _, _, dw, dh = _place(
+                random.Random(s), 1000, 1000, hair.size[0], hair.size[1],
+                range_cm, units,
+            )
+            sizes.append(max(dw, dh))
+        sizes.sort()
+        return sizes[len(sizes) // 2]
+
+    eye_median = median_long(eye, MORPHOLOGY_LENGTH_CM["eyelash"])
+    curve_median = median_long(curve, MORPHOLOGY_LENGTH_CM["curve"])
+    assert eye_median < curve_median, f"eyelash {eye_median} should be smaller than curve {curve_median}"
+
+
+def test_large_image_doesnt_get_huge_hair():
+    """Regression for the old relative-scale bug: a 3000x3000 image at default
+    DPI should get a hair sized by physical cm, not by fraction of the canvas.
+    Upper bound: 12 cm (curve max) * 96/2.54 ≈ 453 px — well under the old
+    0.45 * 3000 = 1350 px upper bound."""
+    import random
+    from app.core import MORPHOLOGY_LENGTH_CM, _image_pixels_per_cm, _place
+
+    img = Image.new("RGBA", (3000, 3000), (255, 255, 255, 255))
+    units = _image_pixels_per_cm(img)
+
+    longest = 0
+    for s in range(30):
+        _, _, dw, dh = _place(
+            random.Random(s), 3000, 3000, 400, 120,
+            MORPHOLOGY_LENGTH_CM["curve"], units,
+        )
+        longest = max(longest, max(dw, dh))
+    # 12 cm * (96/2.54) ≈ 453 px ceiling at default DPI; give a generous
+    # buffer for the upper end of uniform sampling.
+    assert longest < 500, f"curve max length on big image was {longest}px"
+
+
+def test_thumbnail_hair_clamped_to_substrate():
+    """On a tiny thumbnail, the hair must stay within the canvas — no
+    matter what the cm range says."""
+    import random
+    from app.core import MORPHOLOGY_LENGTH_CM, _image_pixels_per_cm, _place
+
+    img = Image.new("RGBA", (60, 60), (255, 255, 255, 255))
+    units = _image_pixels_per_cm(img)
+
+    for s in range(20):
+        _, _, dw, dh = _place(
+            random.Random(s), 60, 60, 400, 120,
+            MORPHOLOGY_LENGTH_CM["curve"], units,
+        )
+        # 90% clamp means longest side ≤ 54 px on a 60 px substrate.
+        assert max(dw, dh) <= 60 * 0.9 + 0.01
+
+
 def test_zip_endpoint_roundtrip(client, zip_bytes):
     import zipfile
     r = client.post(

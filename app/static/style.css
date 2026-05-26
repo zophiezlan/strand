@@ -51,6 +51,24 @@
 
 * { box-sizing: border-box; }
 
+/* One stray hair on the drop zone. The hair PNG comes from /api/sample,
+   rendered by the same generator the file pipeline uses. It's pinned
+   inside the drop zone with pointer-events:none so it never blocks a
+   drop. Hidden until positioned so users don't see a flash at (0,0). */
+.drop-strand {
+  position: absolute;
+  max-width: 110px;
+  height: auto;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  z-index: 1;
+  opacity: 0;
+  transform-origin: center center;
+  transition: opacity 400ms ease;
+}
+.drop-strand.ready { opacity: 0.85; }
+
 html, body {
   margin: 0;
   background: var(--bg);
@@ -78,6 +96,7 @@ header .tag {
 
 /* Drop zone */
 .drop {
+  position: relative; /* containing block for .drop-strand */
   border: 2px dashed var(--line);
   border-radius: 16px;
   background: var(--panel);

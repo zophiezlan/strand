@@ -53,7 +53,47 @@
         </div>
         <div class="drop-meta">Images, PDFs, slide decks, or a zip &nbsp;·&nbsp; up to 25 MB &nbsp;·&nbsp; drop multiple to get a zip back</div>
       </div>
+      <!-- One stray hair on the drop zone — the cleanest version of the joke.
+           A different hair every page load, fetched from /api/sample which
+           runs the same hair generator the tool uses, seeded by the same
+           Python RNG. pointer-events:none so it can never block a drop. -->
+      <img class="drop-strand" alt="" aria-hidden="true" />
     </section>
+    <script>
+      // Pick one shed hair to land on the drop zone. Seed and palette are
+      // random per page load; the server renders the actual hair via the
+      // same `generate_hair` that the file-processing pipeline uses, so
+      // what you see here is literally one frame of what the tool ships.
+      (function () {
+        const rand = (a, b) => a + Math.random() * (b - a);
+        // Locked to the white palette — the app's own subtle/default look
+        // (classic photocopier-glass artefact). Seed still varies per load
+        // so the morphology, curve, and follicle land differently each time.
+        const seed = (Math.random() * 0x7fffffff) | 0;
+
+        const img = document.querySelector(".drop-strand");
+        if (!img) return;
+
+        img.addEventListener("load", () => {
+          // Position is picked *after* the PNG loads so we know its actual
+          // size and can keep the whole hair inside the drop zone, with a
+          // small inset so it never touches the dashed border.
+          const drop = document.getElementById("drop");
+          const dropRect = drop.getBoundingClientRect();
+          // CSS caps the rendered width; height stays proportional.
+          const rendered = img.getBoundingClientRect();
+          const inset = 10;
+          const maxLeft = Math.max(inset, dropRect.width - rendered.width - inset);
+          const maxTop  = Math.max(inset, dropRect.height - rendered.height - inset);
+          img.style.left = Math.round(rand(inset, maxLeft)) + "px";
+          img.style.top  = Math.round(rand(inset, maxTop))  + "px";
+          img.style.transform = "rotate(" + Math.round(rand(-25, 25)) + "deg)";
+          img.classList.add("ready");
+        });
+
+        img.src = "/api/sample?seed=" + seed + "&palette=white";
+      })();
+    </script>
 
     <section class="controls" aria-label="Options">
       <fieldset>

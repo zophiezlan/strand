@@ -19,13 +19,14 @@ Two front-ends, one rendering engine:
 - Generates each hair as a Bezier curve with 4× supersampling, taper, and
   per-pixel colour jitter — so they read as physical strands rather than
   drawn lines.
-- Two morphologies: a single curved strand (default) and a laminated
-  loop with a tail (occasional, more striking).
-- Four palettes: **Dark**, **Mixed**, **Blonde**, **Grey**.
+- Four morphologies mixed by default: curved strand, laminated loop with
+  tail, eyelash (short tight curl), and fragment (short wispy piece).
+- Seven palettes: **Dark / Brown / Blonde / Red / Grey / White / Mixed**.
 - Six density tiers: **Subtle / Normal / Heavy / Hirsute / Werewolf / Cousin Itt**.
   The last three are the joke — every page gets multiple hairs.
-- Four morphologies, mixed by default: curved strand, laminated loop with
-  tail, eyelash (short tight curl), and fragment (short wispy piece).
+- Defaults are tuned to mimic the classic photocopier-glass / laminator-pocket
+  artefact: a single light hair. That's the most convincing "real stray
+  hair" look; the heavier tiers and bolder palettes are for play.
 - Hairs occasionally clump into small tufts (configurable `cluster_chance`) —
   real shed hair doesn't space itself evenly.
 - Content-aware placement: hairs are biased toward detected content
@@ -145,8 +146,8 @@ One endpoint, multipart form. Useful if you want to script this.
 ```
 POST /strand
   file:        <upload>                                       # required
-  palette:     dark|mixed|blonde|grey|brown|white|red         # default: dark
-  intensity:   subtle|normal|heavy|hirsute|werewolf|cousin-itt # default: normal
+  palette:     dark|mixed|blonde|grey|brown|white|red         # default: white
+  intensity:   subtle|normal|heavy|hirsute|werewolf|cousin-itt # default: subtle
   seed:        <int>                                          # optional — reproduce a prior result
   name_suffix: <string>                                       # optional — default: "-strand"; empty = keep original name
 ```

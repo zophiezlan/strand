@@ -3,15 +3,15 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Strand — drop a file, get a haired version</title>
-  <meta name="description" content="A novelty filter that drops procedural hairs onto images, PDFs, and slide decks. In-memory only — your files aren't stored or logged." />
+  <title>Strand — put a hair on it</title>
+  <meta name="description" content="A novelty filter that puts a hair on your images, PDFs, and slide decks. In-memory only — your files aren't stored or logged." />
 
-  <!-- Favicon: inline SVG of a single procedural-feeling strand. -->
+  <!-- Favicon: inline SVG of a single strand. -->
   <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M 4 36 C 18 12, 32 56, 60 24' stroke='%231a1a1a' stroke-width='3' fill='none' stroke-linecap='round'/></svg>" />
 
-  <!-- Open Graph / Twitter — short, accurate. -->
-  <meta property="og:title" content="Strand — drop a file, get a haired version" />
-  <meta property="og:description" content="A novelty filter that drops procedural hairs onto images, PDFs, and slide decks." />
+  <!-- Open Graph / Twitter -->
+  <meta property="og:title" content="Strand — put a hair on it" />
+  <meta property="og:description" content="A novelty filter that puts a hair on your images, PDFs, and slide decks." />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary" />
 
@@ -21,41 +21,45 @@
   <main class="wrap">
     <header>
       <h1>Strand</h1>
-      <p class="tag">Drop a file. Get the same file, but with a procedural hair gently strewn across it.</p>
+      <p class="tag">Drop a file. We'll put a hair on it. (Or twenty, if you ask.)</p>
     </header>
 
     <section id="drop" class="drop">
       <input type="file" id="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.pptx,.zip" multiple hidden />
       <input type="file" id="folder" webkitdirectory directory multiple hidden />
       <div class="drop-inner">
-        <div class="drop-glyph">〰️</div>
+        <svg class="drop-glyph" viewBox="0 0 120 40" aria-hidden="true">
+          <path d="M 4 28 C 22 4, 38 36, 60 18 S 96 4, 116 24"
+                fill="none" stroke="currentColor" stroke-width="2.4"
+                stroke-linecap="round" />
+        </svg>
         <div class="drop-text">
           <strong>Drop files here</strong>
-          <span>or click to pick · paste a screenshot · <a href="#" id="pick-folder">pick a folder</a></span>
+          <span>or click to browse · paste an image · <a href="#" id="pick-folder">pick a folder</a></span>
         </div>
-        <div class="drop-meta">PNG · JPG · GIF · BMP · WEBP · PDF · PPTX · ZIP &nbsp;·&nbsp; 25 MB total · drop multiple to get a zip back</div>
+        <div class="drop-meta">Images, PDFs, slide decks, or a zip &nbsp;·&nbsp; up to 25 MB &nbsp;·&nbsp; drop multiple to get a zip back</div>
       </div>
     </section>
 
     <section class="controls" aria-label="Options">
       <fieldset>
-        <legend>Palette</legend>
+        <legend>Hair colour</legend>
         <div class="row wrap palette-row" role="radiogroup" id="palette">
-          <button type="button" class="chip palette-chip selected" data-value="dark" role="radio" aria-checked="true"><span class="chip-sample"></span><span class="chip-label">Dark</span></button>
+          <button type="button" class="chip palette-chip" data-value="dark" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Dark</span></button>
           <button type="button" class="chip palette-chip" data-value="brown" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Brown</span></button>
           <button type="button" class="chip palette-chip" data-value="blonde" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Blonde</span></button>
           <button type="button" class="chip palette-chip" data-value="red" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Red</span></button>
           <button type="button" class="chip palette-chip" data-value="grey" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Grey</span></button>
-          <button type="button" class="chip palette-chip" data-value="white" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">White</span></button>
+          <button type="button" class="chip palette-chip selected" data-value="white" role="radio" aria-checked="true"><span class="chip-sample"></span><span class="chip-label">White</span></button>
           <button type="button" class="chip palette-chip" data-value="mixed" role="radio" aria-checked="false"><span class="chip-sample chip-sample--mixed"></span><span class="chip-label">Mixed</span></button>
         </div>
       </fieldset>
 
       <fieldset>
-        <legend>Density</legend>
-        <div class="row wrap" role="radiogroup" id="intensity">
-          <button type="button" class="chip" data-value="subtle" role="radio" aria-checked="false">Subtle</button>
-          <button type="button" class="chip selected" data-value="normal" role="radio" aria-checked="true">Normal</button>
+        <legend>Hair density</legend>
+        <div class="row density" role="radiogroup" id="intensity">
+          <button type="button" class="chip selected" data-value="subtle" role="radio" aria-checked="true">Subtle</button>
+          <button type="button" class="chip" data-value="normal" role="radio" aria-checked="false">Normal</button>
           <button type="button" class="chip" data-value="heavy" role="radio" aria-checked="false">Heavy</button>
           <button type="button" class="chip wild" data-value="hirsute" role="radio" aria-checked="false">Hirsute</button>
           <button type="button" class="chip wild" data-value="werewolf" role="radio" aria-checked="false">Werewolf</button>
@@ -64,9 +68,9 @@
       </fieldset>
 
       <fieldset>
-        <legend>Filename suffix</legend>
+        <legend>Filename</legend>
         <input type="text" id="suffix" class="text-input" maxlength="32" placeholder="-strand" />
-        <div class="hint">Leave blank to keep the original name. Inside a ZIP, each file gets this suffix too.</div>
+        <div class="hint">A tag added to your filename so you can tell the new file apart. Leave blank to keep the original name.</div>
       </fieldset>
     </section>
 
@@ -75,24 +79,23 @@
     <section id="status" class="status" hidden></section>
     <section id="result" class="result" hidden>
       <div class="result-meta">
-        <span class="seed-label">seed</span>
-        <code id="seed-value">—</code>
-        <button type="button" id="reroll-same" class="ghost" title="Use the same seed">Same seed</button>
-        <button type="button" id="reroll-new" class="ghost" title="Get a different result">New seed</button>
+        <span class="seed-label">Mix code</span>
+        <code id="seed-value" title="Click to copy. Save it to get the same look later.">—</code>
+        <button type="button" id="reroll-same" class="ghost" title="Re-do it with the same Mix code">Do that one again</button>
+        <button type="button" id="reroll-new" class="ghost" title="Try a different one">Try another</button>
       </div>
       <div id="zip-summary" class="zip-summary" hidden></div>
       <div id="preview" class="preview" hidden>
         <img id="preview-img" alt="Hairified preview" />
       </div>
+      <button type="button" id="download" class="download" disabled>Download</button>
     </section>
 
     <footer>
-      <h2>About</h2>
-      <ul class="privacy">
-        <li>Files are processed in memory and discarded as soon as the response is sent.</li>
-        <li>We don't store your file or log its contents.</li>
-        <li>Source: <a href="https://github.com/" rel="noopener">github</a> (placeholder — swap in the real link).</li>
-      </ul>
+      <p class="privacy">
+        Your file goes through and comes right back to you — nothing is stored or logged.
+        Shortcuts: <kbd>Enter</kbd> to go · <kbd>R</kbd> for another · <kbd>S</kbd> to repeat the last one.
+      </p>
     </footer>
   </main>
 

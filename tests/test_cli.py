@@ -126,7 +126,9 @@ def test_cli_inject_modifies_and_creates_manifest(tree: Path):
     assert manifest_path.is_file()
     manifest = json.loads(manifest_path.read_text())
     assert manifest["intensity"] == "normal"
-    assert manifest["palette"] == "dark"
+    # Palette defaults to "white" (the photocopier-stray-hair sweet spot)
+    # when no --palette is passed.
+    assert manifest["palette"] == "white"
     assert manifest["seed"] == 42
 
     rels = sorted(e["rel"].replace("\\", "/") for e in manifest["entries"])

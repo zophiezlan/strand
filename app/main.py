@@ -167,8 +167,10 @@ def _common_root(filenames: list[str]) -> str | None:
 @limiter.limit("30/hour")
 async def strand(
     request: Request,
-    palette: str = Form("dark"),
-    intensity: str = Form("normal"),
+    # Defaults aim at the most recognisable "stray hair" look — a single
+    # light hair, the classic photocopier-glass / laminator-pocket artefact.
+    palette: str = Form("white"),
+    intensity: str = Form("subtle"),
     seed: str | None = Form(None),
 ):
     # Read name_suffix and the file list from the raw form. Empty strings come

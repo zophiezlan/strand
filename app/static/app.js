@@ -11,6 +11,7 @@
   const seedValueEl = document.getElementById("seed-value");
   const rerollSameBtn = document.getElementById("reroll-same");
   const rerollNewBtn = document.getElementById("reroll-new");
+  const downloadBtn = document.getElementById("download");
   const zipSummaryEl = document.getElementById("zip-summary");
   const suffixInput = document.getElementById("suffix");
 
@@ -21,9 +22,18 @@
 
   /** Array of File objects currently selected for upload (always >= 0). */
   let currentFiles = [];
-  let palette = "dark";
-  let intensity = "normal";
+  // Defaults chosen from real-world testing: a single light hair best
+  // mimics the photocopier-glass / laminator-pocket artefact, which is
+  // the most recognisable "stray hair" look.
+  let palette = "white";
+  let intensity = "subtle";
   let lastSeed = null;
+
+  /** The most recent result, held in memory so the explicit Download button
+      can save it on click instead of the page auto-downloading. */
+  let lastResultBlob = null;
+  let lastResultName = null;
+  let lastPreviewUrl = null;  // separate object URL for inline preview img
 
   // --- Chip selectors ---
   for (const group of ["palette", "intensity"]) {
@@ -121,10 +131,10 @@
     const roots = new Set(rels.map((p) => p.split("/")[0]));
     const root = roots.size === 1 && rels.every((p) => p.includes("/")) ? roots.values().next().value : null;
     const skipped = originalCount - accepted.length;
-    const skippedNote = skipped > 0 ? ` (${skipped} unsupported skipped)` : "";
+    const skippedNote = skipped > 0 ? ` (${skipped} we can't handle will stay out)` : "";
     return {
       title: root ? `${root}/ — ${accepted.length} files` : `${accepted.length} files`,
-      subtitle: `${sizeKb} — will be returned as a zip${skippedNote}`,
+      subtitle: `${sizeKb} — you'll get them back as a zip${skippedNote}`,
     };
   }
 
@@ -158,9 +168,17 @@
     goBtn.disabled = true;
     rerollSameBtn.disabled = true;
     rerollNewBtn.disabled = true;
+    downloadBtn.disabled = true;
     previewEl.hidden = true;
     zipSummaryEl.hidden = true;
-    showWorking("Stranding");
+    // Discard any prior result + preview URL before starting fresh.
+    if (lastPreviewUrl) {
+      URL.revokeObjectURL(lastPreviewUrl);
+      lastPreviewUrl = null;
+    }
+    lastResultBlob = null;
+    lastResultName = null;
+    showWorking("Adding hair");
 
     try {
       const form = new FormData();
@@ -210,41 +228,50 @@
       const downloadName = downloadNameFrom(res, singleFile.name);
       const suffix = suffixOf(singleFile.name);
 
+      // Stash for the explicit Download button — the page no longer
+      // auto-fires the save dialog. The user looks at the preview first.
+      lastResultBlob = blob;
+      lastResultName = downloadName;
+
       resultEl.hidden = false;
 
       const previewSingleImage = currentFiles.length === 1 && IMAGE_SUFFIXES.has(suffix);
 
       if (isZipResponse) {
         const parts = [];
-        if (haired) parts.push(`<strong>${haired}</strong> hairified`);
-        if (skipped && Number(skipped) > 0) parts.push(`${skipped} skipped`);
-        if (errored && Number(errored) > 0) parts.push(`${errored} errored`);
+        if (haired) parts.push(`<strong>${haired}</strong> got hair`);
+        if (skipped && Number(skipped) > 0) parts.push(`${skipped} left alone`);
+        if (errored && Number(errored) > 0) parts.push(`${errored} had trouble`);
         zipSummaryEl.innerHTML = parts.join(" · ") +
-          ` &nbsp;·&nbsp; see <code>_strand-report.txt</code> inside the zip.`;
+          ` &nbsp;·&nbsp; there's a summary inside the zip if you want the details.`;
         zipSummaryEl.hidden = false;
-        showInfo("Done — your hairified zip is downloading.");
+        showInfo("Done — your zip's ready.");
       } else if (previewSingleImage) {
-        const url = URL.createObjectURL(blob);
-        previewImg.src = url;
+        lastPreviewUrl = URL.createObjectURL(blob);
+        previewImg.src = lastPreviewUrl;
         previewEl.hidden = false;
-        showInfo("Done. Preview below — file is also downloading.");
+        showInfo("Done. How does it look?");
       } else {
-        showInfo("Done — your hairified file is downloading.");
+        showInfo("Done — ready when you are.");
       }
-
-      triggerDownload(blob, downloadName);
     } catch (err) {
       showError(`Network error: ${err.message || err}`);
     } finally {
       goBtn.disabled = false;
       rerollSameBtn.disabled = lastSeed == null;
       rerollNewBtn.disabled = false;
+      downloadBtn.disabled = lastResultBlob == null;
     }
   }
 
   goBtn.addEventListener("click", () => submit({ reuseSeed: false }));
   rerollSameBtn.addEventListener("click", () => submit({ reuseSeed: true }));
   rerollNewBtn.addEventListener("click", () => submit({ reuseSeed: false }));
+  downloadBtn.addEventListener("click", () => {
+    if (lastResultBlob && lastResultName) {
+      triggerDownload(lastResultBlob, lastResultName);
+    }
+  });
 
   function downloadNameFrom(res, fallback) {
     const cd = res.headers.get("Content-Disposition") || "";
@@ -265,26 +292,9 @@
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
-  // --- Palette chip previews ---
-  // Each palette chip gets a small inline hair PNG fetched from /api/sample.
-  // Uses a fixed seed per palette so the chip preview is stable across reloads
-  // (caches well, doesn't flicker). Falls back silently if /api/sample is
-  // unreachable (e.g. when the HTML is opened from disk via a preview pane).
-  const PALETTE_SEEDS = {
-    dark: 1, brown: 2, blonde: 3, red: 4, grey: 5, white: 6, mixed: 7,
-  };
-  for (const chip of document.querySelectorAll(".palette-chip")) {
-    const value = chip.dataset.value;
-    const sample = chip.querySelector(".chip-sample");
-    if (!sample) continue;
-    const seed = PALETTE_SEEDS[value] ?? 1;
-    const url = `/api/sample?palette=${encodeURIComponent(value)}&seed=${seed}`;
-    // Probe by setting a background-image; if it 404s the chip just keeps its
-    // empty thumbnail. No console noise either way.
-    const probe = new Image();
-    probe.onload = () => { sample.style.backgroundImage = `url("${url}")`; };
-    probe.src = url;
-  }
+  // Palette chip swatches are pure CSS (per-palette gradients), so nothing
+  // to wire here. /api/sample stays around for the CLI sample command and
+  // for anyone who wants to embed a real procedural hair PNG elsewhere.
 
   // --- Paste a screenshot from the clipboard ---
   document.addEventListener("paste", (e) => {
@@ -295,7 +305,7 @@
         if (f) {
           // Browsers often give pasted screenshots names like "image.png"; that's fine.
           setFiles([f]);
-          showInfo("Got it — pasted clipboard image is ready.");
+          showInfo("Got it — pasted image is ready.");
           e.preventDefault();
           return;
         }
@@ -330,4 +340,5 @@
   // Initial state.
   rerollSameBtn.disabled = true;
   rerollNewBtn.disabled = true;
+  downloadBtn.disabled = true;
 })();

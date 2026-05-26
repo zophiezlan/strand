@@ -395,7 +395,11 @@ INTENSITY_TIERS: dict[str, dict] = {
     "cousin-itt": {"label": "Cousin Itt", "image_count": 60, "rate": 1.0,  "hairs_per_page": 22},
 }
 INTENSITY_ORDER: list[str] = list(INTENSITY_TIERS.keys())
-DEFAULT_INTENSITY = "normal"
+# Default tuned by real-world testing: a single light hair best mimics the
+# photocopier-glass / laminator-pocket artefact, which reads most convincingly
+# as a "real" stray hair. Heavier tiers exist for play, not for first impressions.
+DEFAULT_INTENSITY = "subtle"
+DEFAULT_PALETTE = "white"
 
 
 @dataclass
@@ -407,7 +411,7 @@ class InjectOptions:
     hairs_per_page: int = 1
     # Hairs to overlay on a single image. PDFs/pptx use rate + hairs_per_page.
     image_count: int = 2
-    palette: str = "dark"
+    palette: str = "white"
     content_bias: float = 0.5
     scale_range: tuple[float, float] = (0.15, 0.45)
     # Morphology weights — what fraction of hairs are loops / eyelashes /
@@ -443,7 +447,7 @@ def options_from_ui(palette: str, intensity: str, seed: int | None = None) -> In
     """Translate the UI's coarse choices into InjectOptions."""
     palette = (palette or "").lower().strip()
     if palette not in PALETTE_NAMES:
-        palette = "dark"
+        palette = DEFAULT_PALETTE
     tier = INTENSITY_TIERS[_normalize_intensity(intensity)]
     kwargs = dict(
         rate=tier["rate"],

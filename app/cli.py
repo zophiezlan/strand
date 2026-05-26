@@ -256,12 +256,14 @@ def build_parser() -> argparse.ArgumentParser:
     inj = sub.add_parser("inject", help="Walk a directory and strand supported files.")
     inj.add_argument("directory", type=Path)
     inj.add_argument(
-        "--intensity", choices=INTENSITY_ORDER, default="normal",
-        help="Hair density tier. Past 'heavy' the labels are the joke. (default: normal)",
+        "--intensity", choices=INTENSITY_ORDER, default="subtle",
+        help="Hair density tier. Past 'heavy' the labels are the joke. "
+             "(default: subtle — one hair, the realistic photocopier look)",
     )
     inj.add_argument(
-        "--palette", choices=sorted(PALETTE_NAMES), default="dark",
-        help="Hair colour palette. 'mixed' picks one per hair. (default: dark)",
+        "--palette", choices=sorted(PALETTE_NAMES), default="white",
+        help="Hair colour palette. 'mixed' picks one per hair. "
+             "(default: white — best mimics a photocopied/laminated stray hair)",
     )
     inj.add_argument(
         "--seed", type=int, default=None,

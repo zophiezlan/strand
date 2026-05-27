@@ -674,11 +674,15 @@ def _buddy_offsets(rng, dw, dh, container_w, container_h, base_x, base_y,
 # Public API
 # ---------------------------------------------------------------------------
 
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"}
+IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tif", ".tiff", ".ico"}
 PDF_SUFFIXES = {".pdf"}
 PPTX_SUFFIXES = {".pptx"}
+DOCX_SUFFIXES = {".docx"}
+XLSX_SUFFIXES = {".xlsx"}
 ZIP_SUFFIXES = {".zip"}
-SUPPORTED_SUFFIXES = IMAGE_SUFFIXES | PDF_SUFFIXES | PPTX_SUFFIXES
+SUPPORTED_SUFFIXES = (
+    IMAGE_SUFFIXES | PDF_SUFFIXES | PPTX_SUFFIXES | DOCX_SUFFIXES | XLSX_SUFFIXES
+)
 SUPPORTED_INCLUDING_ZIP = SUPPORTED_SUFFIXES | ZIP_SUFFIXES
 
 
@@ -830,6 +834,12 @@ def inject_image_bytes(data: bytes, suffix: str, opts: InjectOptions) -> tuple[b
         img.convert("RGB").save(out, format="BMP")
     elif suffix == ".webp":
         img.save(out, format="WEBP", quality=92)
+    elif suffix in (".tif", ".tiff"):
+        img.save(out, format="TIFF")
+    elif suffix == ".ico":
+        # ICO frames cap at 256px; let Pillow pick the embedded sizes from the
+        # (possibly downscaled) source so the save doesn't fail on large inputs.
+        img.save(out, format="ICO")
     else:
         img.save(out, format="PNG")
     return out.getvalue(), stats
@@ -1038,6 +1048,317 @@ def inject_pptx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
     return out.getvalue(), stats
 
 
+# wp:anchor template for a page-relative floating picture in a .docx. The
+# graphic subtree (which python-docx builds with the correct image relationship)
+# is moved in as the final child; everything else is positioning. behindDoc=1 +
+# wrapNone lets the hair sit over the text the way a stray hair sits over print.
+_DOCX_ANCHOR_XML = (
+    '<wp:anchor xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"'
+    ' distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="2"'
+    ' behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">'
+    '<wp:simplePos x="0" y="0"/>'
+    '<wp:positionH relativeFrom="page"><wp:posOffset>{x}</wp:posOffset></wp:positionH>'
+    '<wp:positionV relativeFrom="page"><wp:posOffset>{y}</wp:posOffset></wp:positionV>'
+    '<wp:extent cx="{cx}" cy="{cy}"/>'
+    '<wp:effectExtent l="0" t="0" r="0" b="0"/>'
+    '<wp:wrapNone/>'
+    '<wp:docPr id="{id}" name="StrandHair{id}"/>'
+    '<wp:cNvGraphicFramePr/>'
+    '</wp:anchor>'
+)
+
+
+def _docx_float_picture(paragraph, png_bytes: bytes, x_emu: int, y_emu: int,
+                        cx_emu: int, cy_emu: int, drawing_id: int) -> None:
+    """Add one page-anchored floating picture to `paragraph`.
+
+    python-docx only exposes inline pictures, so we let it build the inline
+    drawing (which wires up the image part + relationship correctly), then
+    swap the `wp:inline` wrapper for a `wp:anchor` carrying the same graphic.
+    """
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import qn
+    from docx.shared import Emu
+
+    run = paragraph.add_run()
+    run.add_picture(io.BytesIO(png_bytes), width=Emu(int(cx_emu)), height=Emu(int(cy_emu)))
+
+    drawing = run._r.find(qn("w:drawing"))
+    inline = drawing[0]
+    graphic = inline.find(qn("a:graphic"))
+
+    anchor = parse_xml(_DOCX_ANCHOR_XML.format(
+        x=int(x_emu), y=int(y_emu), cx=int(cx_emu), cy=int(cy_emu), id=drawing_id,
+    ))
+    anchor.append(graphic)  # lxml moves the node; correct schema order (last child)
+    drawing.replace(inline, anchor)
+
+
+# Default Word body metrics for the page estimate below. A floating image
+# anchored to a paragraph renders on whatever page that paragraph flows onto,
+# so to spread hairs across the document the way the PDF/pptx injectors spread
+# across pages/slides we first estimate which page each paragraph lands on.
+_EMU_PER_PT = 12700
+_DOCX_LINE_EMU = int(11 * 1.15 * _EMU_PER_PT)   # 11pt body text, 1.15 line spacing
+_DOCX_CHAR_EMU = int(5.0 * _EMU_PER_PT)         # ~half the point size per glyph
+
+
+def _docx_page_breaks(para) -> int:
+    """How many page boundaries this paragraph forces.
+
+    Counts hard breaks (`<w:br w:type="page"/>`) and Word's own soft
+    `lastRenderedPageBreak` hints — the latter is authoritative for documents
+    last saved by Word, the former covers ones built programmatically.
+    """
+    xml = para._p.xml
+    return xml.count('w:type="page"') + xml.count("lastRenderedPageBreak")
+
+
+def _docx_estimate_pages(paras, content_w_emu: int, content_h_emu: int):
+    """Estimate a page index for each paragraph; return (page_of, n_pages).
+
+    A coarse text-flow model: each paragraph occupies ceil(chars / chars-per-
+    line) lines of body height, plus any explicit/soft page breaks. Good enough
+    to scatter hairs across the document — it doesn't need to match Word's
+    layout engine exactly, just to put different hairs on different pages.
+    """
+    cpl = max(1, content_w_emu // _DOCX_CHAR_EMU)
+    page = 0
+    cum = 0
+    page_of = []
+    for p in paras:
+        breaks = _docx_page_breaks(p)
+        if breaks:
+            page += breaks
+            cum = 0
+        page_of.append(page)
+        text_len = len(p.text or "")
+        lines = max(1, -(-text_len // cpl))  # ceil division
+        cum += lines * _DOCX_LINE_EMU
+        while cum >= content_h_emu:
+            page += 1
+            cum -= content_h_emu
+    return page_of, page + 1
+
+
+def inject_docx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
+    """Overlay hairs onto a Word document. Returns (rewritten bytes, stats dict).
+
+    Word reflows text across pages at render time, so there's no page grid to
+    walk the way a PDF has. We estimate which page each paragraph lands on, then
+    use the same per-page `rate` + `hairs_per_page` model as the PDF/pptx
+    injectors — each hair is anchored (page-relative) to a paragraph on its
+    target page, so Word renders the hairs spread through the document.
+    """
+    from docx import Document
+
+    rng = opts.rng()
+    stats = _empty_stats()
+    doc = Document(io.BytesIO(data))
+
+    section = doc.sections[0]
+    pw = int(section.page_width)   # EMU
+    ph = int(section.page_height)  # EMU
+    content_w = max(1, pw - int(section.left_margin or 0) - int(section.right_margin or 0))
+    content_h = max(1, ph - int(section.top_margin or 0) - int(section.bottom_margin or 0))
+
+    paras = doc.paragraphs or [doc.add_paragraph()]
+    page_of, n_pages = _docx_estimate_pages(paras, content_w, content_h)
+
+    stats["substrate"] = {
+        "width_native": pw,
+        "height_native": ph,
+        "native_unit": "EMU",
+        "dpi": None,
+        "width_cm": round(pw / _EMU_PER_CM, 1),
+        "height_cm": round(ph / _EMU_PER_CM, 1),
+        "page_count": n_pages,  # estimated — Word's exact pagination may differ
+    }
+
+    # Group paragraphs by estimated page. A page-break paragraph is excluded as
+    # an anchor candidate: its anchor character straddles the boundary, so a
+    # float pinned to it renders on the *previous* page in practice — anchoring
+    # to a real text paragraph on the page is what reliably lands the hair there.
+    paras_by_page: dict[int, list] = {}
+    all_by_page: dict[int, list] = {}
+    for para, pg in zip(paras, page_of):
+        all_by_page.setdefault(pg, []).append(para)
+        if _docx_page_breaks(para) or not (para.text or "").strip():
+            continue
+        paras_by_page.setdefault(pg, []).append(para)
+    # If filtering left a page with no text anchor, fall back to any paragraph
+    # the estimate placed there (e.g. a page of only images or breaks).
+    for pg, plist in all_by_page.items():
+        paras_by_page.setdefault(pg, plist)
+
+    # Per-page Bernoulli with an at-least-one guarantee, exactly like the PDF
+    # path — a short doc on "subtle" still picks up a visible hair.
+    page_hit = [rng.random() < opts.rate for _ in range(n_pages)]
+    if not any(page_hit):
+        page_hit[rng.randrange(n_pages)] = True
+
+    def anchors_for(pg: int):
+        # Fall back to the nearest populated page if the estimate left this one
+        # empty (e.g. a forced break with no following paragraph yet).
+        if pg in paras_by_page:
+            return paras_by_page[pg]
+        nearest = min(paras_by_page, key=lambda k: abs(k - pg))
+        return paras_by_page[nearest]
+
+    drawing_id = 1
+    per_page = max(1, opts.hairs_per_page)
+    for pg, hit in enumerate(page_hit):
+        if not hit:
+            continue
+        stats["pages_touched"] += 1
+        candidates = anchors_for(pg)
+        for _ in range(per_page):
+            anchor_para = rng.choice(candidates)
+            hair, morph, color = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+            hair = _rotate_hair(hair, rng)
+            stats["hairs"] += 1
+            stats["morphologies"][morph] += 1
+            _bump(stats["palettes"], color)
+            hw, hh = hair.size
+            x, y, dw, dh, on_content = _place(
+                rng, pw, ph, hw, hh,
+                MORPHOLOGY_LENGTH_CM[morph], _EMU_PER_CM,
+            )
+            stats["hair_lengths_cm"].append(round(max(dw, dh) / _EMU_PER_CM, 2))
+            if on_content:
+                stats["content_hits"] += 1
+
+            buf = io.BytesIO()
+            hair.save(buf, format="PNG")
+            _docx_float_picture(anchor_para, buf.getvalue(), x, y, dw, dh, drawing_id)
+            drawing_id += 1
+
+            buddy_count = 0
+            for bx, by in _buddy_offsets(rng, dw, dh, pw, ph, x, y, opts.cluster_chance):
+                buddy, bmorph, bcolor = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+                buddy = _rotate_hair(buddy, rng)
+                stats["hairs"] += 1
+                stats["morphologies"][bmorph] += 1
+                _bump(stats["palettes"], bcolor)
+                buddy_count += 1
+                bs = rng.uniform(0.7, 1.0)
+                bw_, bh_ = dw * bs, dh * bs
+                stats["hair_lengths_cm"].append(round(max(bw_, bh_) / _EMU_PER_CM, 2))
+                bbuf = io.BytesIO()
+                buddy.save(bbuf, format="PNG")
+                _docx_float_picture(anchor_para, bbuf.getvalue(), bx, by, bw_, bh_, drawing_id)
+                drawing_id += 1
+            if buddy_count > 0:
+                stats["clusters"] += 1
+
+    out = io.BytesIO()
+    doc.save(out)
+    return out.getvalue(), stats
+
+
+# A spreadsheet has no page; we synthesise a canvas from the used range using
+# Excel's default cell sizing so hairs scatter over the populated area rather
+# than a single cell. Approximate by design — it's a novelty overlay.
+_XLSX_EMU_PER_COL = 609600   # default column width ≈ 64 px
+_XLSX_EMU_PER_ROW = 190500   # default row height = 15 pt ≈ 20 px
+
+
+def inject_xlsx_bytes(data: bytes, opts: InjectOptions) -> tuple[bytes, dict]:
+    """Overlay hairs onto an Excel workbook. Returns (rewritten bytes, stats dict).
+
+    Each selected sheet gets hairs absolutely positioned (EMU) over a canvas
+    sized from its used range. Per-sheet selection mirrors the PDF page model.
+    """
+    from openpyxl import load_workbook
+    from openpyxl.drawing.image import Image as XLImage
+    from openpyxl.drawing.spreadsheet_drawing import AbsoluteAnchor
+    from openpyxl.drawing.xdr import XDRPoint2D, XDRPositiveSize2D
+
+    rng = opts.rng()
+    stats = _empty_stats()
+    wb = load_workbook(io.BytesIO(data))
+
+    sheets = wb.worksheets
+    if not sheets:
+        out = io.BytesIO()
+        wb.save(out)
+        return out.getvalue(), stats
+
+    def canvas_emu(ws):
+        cols = max(ws.max_column or 1, 8)
+        rows = max(ws.max_row or 1, 20)
+        return cols * _XLSX_EMU_PER_COL, rows * _XLSX_EMU_PER_ROW
+
+    cw0, ch0 = canvas_emu(sheets[0])
+    stats["substrate"] = {
+        "width_native": cw0,
+        "height_native": ch0,
+        "native_unit": "EMU",
+        "dpi": None,
+        "width_cm": round(cw0 / _EMU_PER_CM, 1),
+        "height_cm": round(ch0 / _EMU_PER_CM, 1),
+        "sheet_count": len(sheets),
+    }
+
+    sheet_hit = [rng.random() < opts.rate for _ in sheets]
+    if not any(sheet_hit):
+        sheet_hit[rng.randrange(len(sheets))] = True
+
+    def add_hair(ws, png_bytes, x, y, cx, cy):
+        img = XLImage(io.BytesIO(png_bytes))
+        img.anchor = AbsoluteAnchor(
+            pos=XDRPoint2D(int(x), int(y)),
+            ext=XDRPositiveSize2D(int(cx), int(cy)),
+        )
+        ws.add_image(img)
+
+    per_sheet = max(1, opts.hairs_per_page)
+    for ws, do_it in zip(sheets, sheet_hit):
+        if not do_it:
+            continue
+        stats["pages_touched"] += 1
+        cw, ch = canvas_emu(ws)
+        for _ in range(per_sheet):
+            hair, morph, color = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+            hair = _rotate_hair(hair, rng)
+            stats["hairs"] += 1
+            stats["morphologies"][morph] += 1
+            _bump(stats["palettes"], color)
+            hw, hh = hair.size
+            x, y, dw, dh, on_content = _place(
+                rng, cw, ch, hw, hh,
+                MORPHOLOGY_LENGTH_CM[morph], _EMU_PER_CM,
+            )
+            stats["hair_lengths_cm"].append(round(max(dw, dh) / _EMU_PER_CM, 2))
+            if on_content:
+                stats["content_hits"] += 1
+
+            buf = io.BytesIO()
+            hair.save(buf, format="PNG")
+            add_hair(ws, buf.getvalue(), x, y, dw, dh)
+
+            buddy_count = 0
+            for bx, by in _buddy_offsets(rng, dw, dh, cw, ch, x, y, opts.cluster_chance):
+                buddy, bmorph, bcolor = generate_hair_with_morphology(rng, **_morph_kwargs(opts))
+                buddy = _rotate_hair(buddy, rng)
+                stats["hairs"] += 1
+                stats["morphologies"][bmorph] += 1
+                _bump(stats["palettes"], bcolor)
+                buddy_count += 1
+                bs = rng.uniform(0.7, 1.0)
+                bw_, bh_ = dw * bs, dh * bs
+                stats["hair_lengths_cm"].append(round(max(bw_, bh_) / _EMU_PER_CM, 2))
+                bbuf = io.BytesIO()
+                buddy.save(bbuf, format="PNG")
+                add_hair(ws, bbuf.getvalue(), bx, by, bw_, bh_)
+            if buddy_count > 0:
+                stats["clusters"] += 1
+
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue(), stats
+
+
 def _suffix_of(name: str) -> str:
     return ("." + name.rsplit(".", 1)[-1].lower()) if "." in name else ""
 
@@ -1055,6 +1376,10 @@ def strand_bytes(data: bytes, filename: str, opts: InjectOptions) -> tuple[bytes
         return inject_pdf_bytes(data, opts)
     if suffix in PPTX_SUFFIXES:
         return inject_pptx_bytes(data, opts)
+    if suffix in DOCX_SUFFIXES:
+        return inject_docx_bytes(data, opts)
+    if suffix in XLSX_SUFFIXES:
+        return inject_xlsx_bytes(data, opts)
     raise ValueError(f"unsupported file type: {suffix or filename!r}")
 
 

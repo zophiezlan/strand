@@ -52,7 +52,8 @@ Two front-ends, one rendering engine:
 - **Custom filename suffix**: default is `-strand`. Override it (e.g.
   `.v2`) or leave it empty to keep the original name.
 
-Supported file types: PNG, JPG, JPEG, GIF, BMP, WEBP, PDF, PPTX, ZIP.
+Supported file types: PNG, JPG, JPEG, GIF, BMP, WEBP, TIFF, ICO, PDF, PPTX,
+DOCX, XLSX, ZIP.
 
 ## Privacy
 

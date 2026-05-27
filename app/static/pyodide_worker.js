@@ -30,6 +30,8 @@ let _bootPromise = null;
 // re-resolve them. Pillow is loaded at boot; the rest come in on demand.
 const _loaded = new Set();
 let _pptxInstalled = false;
+let _docxInstalled = false;
+let _xlsxInstalled = false;
 
 function status(msg) {
   self.postMessage({ type: "status", msg });
@@ -100,32 +102,50 @@ const _extOf = (name) => {
 function neededLibs(files) {
   const exts = new Set((files || []).map((f) => _extOf(f.name)));
   const opaque = exts.has(".zip");
-  return { pdf: opaque || exts.has(".pdf"), pptx: opaque || exts.has(".pptx") };
+  return {
+    pdf: opaque || exts.has(".pdf"),
+    pptx: opaque || exts.has(".pptx"),
+    docx: opaque || exts.has(".docx"),
+    xlsx: opaque || exts.has(".xlsx"),
+  };
 }
 
 /** Load only the packages this run requires, skipping anything already loaded. */
 async function ensureExtras(py, files) {
   const need = neededLibs(files);
 
+  const needsMicropip = need.pptx || need.docx || need.xlsx;
+  // python-pptx and python-docx both build on lxml.
+  const needsLxml = need.pptx || need.docx;
+
   const toLoad = [];
   if (need.pdf && !_loaded.has("pymupdf")) toLoad.push("pymupdf");
-  if (need.pptx && !_loaded.has("micropip")) toLoad.push("micropip");
-  if (need.pptx && !_loaded.has("lxml")) toLoad.push("lxml");
+  if (needsMicropip && !_loaded.has("micropip")) toLoad.push("micropip");
+  if (needsLxml && !_loaded.has("lxml")) toLoad.push("lxml");
   if (toLoad.length) {
     status("Loading document libraries…");
     await py.loadPackage(toLoad);
     for (const p of toLoad) _loaded.add(p);
   }
 
-  // python-pptx isn't a Pyodide package; micropip pulls it (and its pure-Python
-  // deps) from PyPI the first time a .pptx shows up.
-  if (need.pptx && !_pptxInstalled) {
-    status("Installing python-pptx…");
+  // None of these ship as Pyodide packages; micropip pulls each from PyPI the
+  // first time that file type shows up. Their distribution-package deps (lxml,
+  // typing-extensions) are resolved by micropip against the local lock, so they
+  // must be vendored — see scripts/fetch_pyodide.py.
+  const pkgs = [];
+  if (need.pptx && !_pptxInstalled) pkgs.push("python-pptx");
+  if (need.docx && !_docxInstalled) pkgs.push("python-docx");
+  if (need.xlsx && !_xlsxInstalled) pkgs.push("openpyxl");
+  if (pkgs.length) {
+    status("Installing document libraries…");
+    const list = pkgs.map((p) => `"${p}"`).join(", ");
     await py.runPythonAsync(`
 import micropip
-await micropip.install("python-pptx")
+await micropip.install([${list}])
 `);
-    _pptxInstalled = true;
+    if (need.pptx) _pptxInstalled = true;
+    if (need.docx) _docxInstalled = true;
+    if (need.xlsx) _xlsxInstalled = true;
   }
 }
 

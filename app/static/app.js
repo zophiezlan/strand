@@ -72,6 +72,9 @@ import * as engine from "/pyodide_engine.js";
     ".gif",
     ".bmp",
     ".webp",
+    ".tif",
+    ".tiff",
+    ".ico",
   ]);
   const SUPPORTED = [
     ".png",
@@ -80,8 +83,13 @@ import * as engine from "/pyodide_engine.js";
     ".gif",
     ".bmp",
     ".webp",
+    ".tif",
+    ".tiff",
+    ".ico",
     ".pdf",
     ".pptx",
+    ".docx",
+    ".xlsx",
     ".zip",
   ];
   const MAX_BYTES = 25 * 1024 * 1024;
@@ -230,7 +238,13 @@ import * as engine from "/pyodide_engine.js";
       intensity === "cousin-itt";
     const heavy = files.some((f) => {
       const s = suffixOf(f.name);
-      return s === ".pdf" || s === ".pptx" || s === ".zip";
+      return (
+        s === ".pdf" ||
+        s === ".pptx" ||
+        s === ".docx" ||
+        s === ".xlsx" ||
+        s === ".zip"
+      );
     });
     if (wild && heavy)
       return "Adding hair — a dense deck takes a minute or two";

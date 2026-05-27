@@ -8,9 +8,12 @@ Docker build time so production serves the whole interpreter from its own origin
 works without running it — the worker just uses the CDN.
 
 Only the wheels actually loaded at runtime are fetched: Pillow (always), plus
-pymupdf / lxml / micropip (loaded lazily for PDFs and pptx). python-pptx is NOT
-vendored — it is installed via micropip from PyPI on first pptx, the one
-remaining runtime fetch.
+pymupdf / lxml / micropip / typing-extensions (loaded lazily for PDFs and Office
+docs). python-pptx / python-docx / openpyxl are NOT vendored — they're installed
+via micropip from PyPI on first use, the remaining runtime fetch. Their
+distribution-package dependency typing-extensions IS vendored, because micropip
+resolves it against the local lock and would 404 trying to load an un-vendored
+wheel (the failure that makes `from docx import ...` raise ModuleNotFound).
 
 Idempotent: a file already present with the expected sha256 is left alone.
 """
@@ -37,9 +40,12 @@ RUNTIME_FILES = (
     "pyodide-lock.json",
 )
 
-# Canonical package names we loadPackage() at runtime. The lock's dependency
-# graph is walked from these so any transitive wheels come along too.
-WANTED_PACKAGES = ("pillow", "pymupdf", "lxml", "micropip")
+# Canonical package names we loadPackage() (or micropip-resolve) at runtime. The
+# lock's dependency graph is walked from these so any transitive wheels come
+# along too. typing-extensions is a distribution package that python-pptx and
+# python-docx depend on; micropip loads it from the local lock, so its wheel
+# must be present here.
+WANTED_PACKAGES = ("pillow", "pymupdf", "lxml", "micropip", "typing-extensions")
 
 
 def _fetch(url: str, timeout: int = 120) -> bytes:

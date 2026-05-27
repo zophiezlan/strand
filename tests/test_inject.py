@@ -19,6 +19,8 @@ from app.core import (
     inject_image_bytes,
     inject_pdf_bytes,
     inject_pptx_bytes,
+    inject_docx_bytes,
+    inject_xlsx_bytes,
     options_from_ui,
 )
 
@@ -74,6 +76,62 @@ def pptx_bytes() -> bytes:
         tb.text_frame.text = f"Slide {i + 1}"
     buf = io.BytesIO()
     prs.save(buf)
+    return buf.getvalue()
+
+
+@pytest.fixture
+def tiff_bytes() -> bytes:
+    img = Image.new("RGB", (320, 240), "white")
+    buf = io.BytesIO()
+    img.save(buf, format="TIFF")
+    return buf.getvalue()
+
+
+@pytest.fixture
+def ico_bytes() -> bytes:
+    img = Image.new("RGBA", (64, 64), (255, 255, 255, 255))
+    buf = io.BytesIO()
+    img.save(buf, format="ICO")
+    return buf.getvalue()
+
+
+@pytest.fixture
+def docx_bytes() -> bytes:
+    from docx import Document
+    doc = Document()
+    doc.add_paragraph("Lorem ipsum dolor sit amet.")
+    doc.add_paragraph("Phasellus blandit, mauris in commodo accumsan.")
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+@pytest.fixture
+def multipage_docx_bytes() -> bytes:
+    """Three pages, forced with explicit page breaks."""
+    from docx import Document
+    doc = Document()
+    for page in range(3):
+        doc.add_paragraph(f"Page {page + 1} body text. " * 5)
+        if page < 2:
+            doc.add_page_break()
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+@pytest.fixture
+def xlsx_bytes() -> bytes:
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "Item"
+    ws["B1"] = "Value"
+    for i in range(2, 8):
+        ws[f"A{i}"] = f"row {i}"
+        ws[f"B{i}"] = i * 10
+    buf = io.BytesIO()
+    wb.save(buf)
     return buf.getvalue()
 
 
@@ -143,6 +201,63 @@ def test_inject_pptx_roundtrip(pptx_bytes):
 
     prs = Presentation(io.BytesIO(out))
     assert len(prs.slides) == 3
+
+
+def test_inject_tiff_roundtrip(tiff_bytes):
+    opts = InjectOptions(seed=11, image_count=2)
+    out, _ = inject_image_bytes(tiff_bytes, ".tif", opts)
+    assert out != tiff_bytes
+    with Image.open(io.BytesIO(out)) as im:
+        im.load()
+        assert im.format == "TIFF"
+        assert im.size == (320, 240)
+
+
+def test_inject_ico_roundtrip(ico_bytes):
+    opts = InjectOptions(seed=12, image_count=1)
+    out, _ = inject_image_bytes(ico_bytes, ".ico", opts)
+    assert out != ico_bytes
+    with Image.open(io.BytesIO(out)) as im:
+        im.load()
+        assert im.format == "ICO"
+
+
+def test_inject_docx_roundtrip(docx_bytes):
+    from docx import Document
+
+    opts = InjectOptions(seed=13, hairs_per_page=3, cluster_chance=0.0)
+    out, stats = inject_docx_bytes(docx_bytes, opts)
+    assert len(out) > 0
+    assert out != docx_bytes
+    # One-page fixture → single page hit → hairs_per_page hairs.
+    assert stats["hairs"] == 3
+    # Reopens cleanly and the floating drawings are present in the body XML.
+    doc = Document(io.BytesIO(out))
+    body_xml = "".join(p._p.xml for p in doc.paragraphs)
+    assert body_xml.count("</wp:anchor>") == 3
+
+
+def test_inject_docx_spreads_across_pages(multipage_docx_bytes):
+    """A multi-page doc should pick up hairs on more than one page, mirroring
+    the PDF/pptx per-page model rather than dumping everything on page one."""
+    opts = InjectOptions(seed=21, rate=1.0, hairs_per_page=1, cluster_chance=0.0)
+    out, stats = inject_docx_bytes(multipage_docx_bytes, opts)
+    assert stats["substrate"]["page_count"] >= 3
+    # rate=1.0 → every estimated page hit, one hair each.
+    assert stats["pages_touched"] >= 3
+    assert stats["hairs"] == stats["pages_touched"]
+
+
+def test_inject_xlsx_roundtrip(xlsx_bytes):
+    from openpyxl import load_workbook
+
+    opts = InjectOptions(seed=14, rate=1.0, hairs_per_page=2, cluster_chance=0.0)
+    out, stats = inject_xlsx_bytes(xlsx_bytes, opts)
+    assert len(out) > 0
+    assert out != xlsx_bytes
+    assert stats["hairs"] == 2
+    wb = load_workbook(io.BytesIO(out))
+    assert len(wb.active._images) == 2
 
 
 def test_strand_bytes_dispatches_by_suffix(png_bytes, pdf_bytes):

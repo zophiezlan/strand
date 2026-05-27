@@ -62,7 +62,7 @@ limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 app = FastAPI(
     title="Strand",
-    description="Procedural-hair novelty filter for images, PDFs, and pptx files.",
+    description="Procedural-hair novelty filter for images, PDFs, and Office documents.",
     docs_url=None,
     redoc_url=None,
 )
@@ -87,6 +87,7 @@ def index():
 # both the server-side path and the in-browser Pyodide path read from this file.
 _CORE_PY = Path(__file__).parent / "core.py"
 _ENGINE_PY = Path(__file__).parent / "engine.py"
+_STATIC_DIR = Path(__file__).parent / "static"
 
 
 @app.get("/core.py")
@@ -110,6 +111,28 @@ def engine_py():
     )
 
 
+# The Pyodide engine shim + worker are app code (not the immutable runtime under
+# /pyodide/). Serve them no-cache so a deploy that changes worker logic — e.g.
+# which libraries to load for a new file type — takes effect on the next load
+# instead of clients running a stale worker out of the HTTP cache.
+@app.get("/pyodide_engine.js")
+def pyodide_engine_js():
+    return FileResponse(
+        _STATIC_DIR / "pyodide_engine.js",
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/pyodide_worker.js")
+def pyodide_worker_js():
+    return FileResponse(
+        _STATIC_DIR / "pyodide_worker.js",
+        media_type="text/javascript",
+        headers={"Cache-Control": "no-cache"},
+    )
+
+
 # Static mount happens at the *bottom* of this module so every explicit route
 # (including `POST /strand`) is registered first. The mount sits at `/` (not
 # `/static`) so that sibling-relative asset paths in index.html resolve both in
@@ -124,8 +147,13 @@ _OUTPUT_CONTENT_TYPES = {
     ".gif": "image/gif",
     ".bmp": "image/bmp",
     ".webp": "image/webp",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+    ".ico": "image/x-icon",
     ".pdf": "application/pdf",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".zip": "application/zip",
 }
 

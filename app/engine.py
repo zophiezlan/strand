@@ -27,8 +27,13 @@ _OUTPUT_CONTENT_TYPES = {
     ".gif":  "image/gif",
     ".bmp":  "image/bmp",
     ".webp": "image/webp",
+    ".tif":  "image/tiff",
+    ".tiff": "image/tiff",
+    ".ico":  "image/x-icon",
     ".pdf":  "application/pdf",
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".zip":  "application/zip",
 }
 

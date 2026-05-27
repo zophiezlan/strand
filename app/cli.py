@@ -1,6 +1,6 @@
 # PYTHON_ARGCOMPLETE_OK
 """
-Strand CLI — apply procedural hairs to images, PDFs, pptx, and zip files on disk.
+Strand CLI — apply procedural hairs to images, PDFs, Office docs, and zip files on disk.
 
 Thin wrapper over `app.core`: same hair generation, palettes, density tiers,
 and content-aware placement as the web service. The differences are the
@@ -761,7 +761,7 @@ def cmd_list(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="strand",
-        description="Apply procedural hairs to images, PDFs, pptx, and zip files on disk.",
+        description="Apply procedural hairs to images, PDFs, Office docs, and zip files on disk.",
     )
     p.add_argument(
         "--version", action="version",

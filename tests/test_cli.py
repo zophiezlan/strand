@@ -39,12 +39,30 @@ def _make_pdf(path: Path, pages: int = 2) -> None:
     c.save()
 
 
+def _make_docx(path: Path) -> None:
+    from docx import Document
+    doc = Document()
+    doc.add_paragraph("Lorem ipsum dolor sit amet.")
+    doc.save(str(path))
+
+
+def _make_xlsx(path: Path) -> None:
+    from openpyxl import Workbook
+    wb = Workbook()
+    ws = wb.active
+    ws["A1"] = "Item"
+    ws["B1"] = 42
+    wb.save(str(path))
+
+
 @pytest.fixture
 def tree(tmp_path: Path) -> Path:
-    """A small tree with one PNG, one PDF, one dotdir, and one unsupported file."""
+    """A small tree with one of each office format, a dotdir, and an unsupported file."""
     _make_png(tmp_path / "photo.png")
     (tmp_path / "sub").mkdir()
     _make_pdf(tmp_path / "sub" / "notes.pdf", pages=2)
+    _make_docx(tmp_path / "sub" / "memo.docx")
+    _make_xlsx(tmp_path / "sheet.xlsx")
     (tmp_path / "README.txt").write_text("untouched")
     (tmp_path / ".git").mkdir()
     _make_png(tmp_path / ".git" / "should-be-skipped.png")
@@ -115,12 +133,16 @@ def test_cli_inject_dry_run_changes_nothing(tree: Path, capsys):
 def test_cli_inject_modifies_and_creates_manifest(tree: Path):
     before_png = (tree / "photo.png").read_bytes()
     before_pdf = (tree / "sub" / "notes.pdf").read_bytes()
+    before_docx = (tree / "sub" / "memo.docx").read_bytes()
+    before_xlsx = (tree / "sheet.xlsx").read_bytes()
 
     rc = main(["inject", str(tree), "--intensity", "normal", "--seed", "42"])
     assert rc == 0
 
     assert (tree / "photo.png").read_bytes() != before_png
     assert (tree / "sub" / "notes.pdf").read_bytes() != before_pdf
+    assert (tree / "sub" / "memo.docx").read_bytes() != before_docx
+    assert (tree / "sheet.xlsx").read_bytes() != before_xlsx
 
     manifest_path = tree / ".strand_backups" / "manifest.json"
     assert manifest_path.is_file()
@@ -134,6 +156,8 @@ def test_cli_inject_modifies_and_creates_manifest(tree: Path):
     rels = sorted(e["rel"].replace("\\", "/") for e in manifest["entries"])
     assert "photo.png" in rels
     assert "sub/notes.pdf" in rels
+    assert "sub/memo.docx" in rels
+    assert "sheet.xlsx" in rels
     # Unsupported file and dotdir file not in the manifest.
     assert "README.txt" not in rels
     assert all(".git" not in r for r in rels)
@@ -458,13 +482,16 @@ def test_cli_inject_json_output_shape(tree: Path, capsys):
     out = capsys.readouterr().out
     payload = json.loads(out)
     assert payload["seed"] == 42
-    assert payload["haired"] == 2  # photo.png + sub/notes.pdf
+    # photo.png + sub/notes.pdf + sub/memo.docx + sheet.xlsx
+    assert payload["haired"] == 4
     assert payload["errored"] == 0
     assert "aggregate" in payload
     assert payload["aggregate"]["hairs"] >= 1
     rels = {e["rel"] for e in payload["entries"]}
     assert "photo.png" in rels
     assert "sub/notes.pdf" in rels
+    assert "sub/memo.docx" in rels
+    assert "sheet.xlsx" in rels
     for entry in payload["entries"]:
         assert entry["status"] == "haired"
         assert "hairs" in entry

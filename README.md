@@ -256,7 +256,7 @@ docker run -p 8000:8000 strand
 
 One endpoint, multipart form. Useful if you want to script this.
 
-```
+```bash
 POST /strand
   file:        <upload>                                       # required
   palette:     dark|mixed|blonde|grey|brown|white|red         # default: white
@@ -286,7 +286,7 @@ Limits: 25 MB max upload, 30 requests / hour / IP, 30 s timeout.
 
 ## Repo layout
 
-```
+```text
 app/
 ├─ core.py          # Hair rendering + bytes-based injectors (shared)
 ├─ main.py          # FastAPI app, routes, rate limiting, serves /core.py to the browser

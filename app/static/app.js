@@ -170,12 +170,78 @@ import * as engine from "/pyodide_engine.js";
   for (const evt of ["dragleave", "dragend", "drop"]) {
     dropZone.addEventListener(evt, () => dropZone.classList.remove("dragover"));
   }
-  dropZone.addEventListener("drop", (e) => {
+  dropZone.addEventListener("drop", async (e) => {
     e.preventDefault();
-    if (e.dataTransfer.files && e.dataTransfer.files.length) {
-      setFiles(Array.from(e.dataTransfer.files));
-    }
+    const files = await filesFromDrop(e.dataTransfer);
+    if (files.length) setFiles(files);
   });
+
+  // A plain `dataTransfer.files` does NOT recurse into dropped folders — it
+  // hands back the directory as an opaque, unreadable entry. To support
+  // dropping a whole folder we walk the filesystem entries via the
+  // webkitGetAsEntry API, tagging each file with its path inside the drop so
+  // the zip we build preserves the original structure (same as the folder
+  // *picker* path, which gets structure for free via webkitRelativePath).
+  async function filesFromDrop(dataTransfer) {
+    const items = dataTransfer.items;
+    const canWalk =
+      items &&
+      items.length &&
+      typeof items[0].webkitGetAsEntry === "function";
+    if (!canWalk) {
+      return dataTransfer.files ? Array.from(dataTransfer.files) : [];
+    }
+    // Capture entries synchronously — the items list is emptied once the drop
+    // event handler yields (i.e. after the first await below).
+    const entries = [];
+    for (const item of items) {
+      const entry = item.webkitGetAsEntry();
+      if (entry) entries.push(entry);
+    }
+    const out = [];
+    for (const entry of entries) await walkEntry(entry, out);
+    return out;
+  }
+
+  function walkEntry(entry, out) {
+    return new Promise((resolve) => {
+      if (entry.isFile) {
+        entry.file(
+          (file) => {
+            // fullPath looks like "/folder/sub/file.png"; strip the leading
+            // slash so it matches the picker's webkitRelativePath shape.
+            try {
+              file.relPath = entry.fullPath.replace(/^\/+/, "");
+            } catch (_) {
+              /* expando not settable — fall back to name in fileRelPath */
+            }
+            out.push(file);
+            resolve();
+          },
+          () => resolve(),
+        );
+      } else if (entry.isDirectory) {
+        // readEntries returns results in batches; call until it yields none.
+        const reader = entry.createReader();
+        const collected = [];
+        const readBatch = () => {
+          reader.readEntries((batch) => {
+            if (!batch.length) {
+              Promise.all(collected.map((e) => walkEntry(e, out))).then(
+                resolve,
+              );
+              return;
+            }
+            collected.push(...batch);
+            readBatch();
+          }, () => resolve());
+        };
+        readBatch();
+      } else {
+        resolve();
+      }
+    });
+  }
 
   function suffixOf(name) {
     const i = name.lastIndexOf(".");
@@ -183,7 +249,7 @@ import * as engine from "/pyodide_engine.js";
   }
 
   function fileRelPath(f) {
-    return f.webkitRelativePath || f.name;
+    return f.relPath || f.webkitRelativePath || f.name;
   }
 
   // Kick off the in-browser engine boot as soon as the user shows intent

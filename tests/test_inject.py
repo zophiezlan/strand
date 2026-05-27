@@ -288,7 +288,7 @@ def test_image_injector_returns_stats(png_bytes):
     assert stats["clusters"] == 0  # cluster_chance=0 disables buddies
     morph_sum = sum(stats["morphologies"].values())
     assert morph_sum == 3
-    assert set(stats["morphologies"].keys()) == {"curve", "loop", "eyelash", "fragment", "kink"}
+    assert set(stats["morphologies"].keys()) == {"curve", "loop", "eyelash", "fragment", "pube"}
     # Non-mixed palette: every hair drawn in the requested colour family.
     assert stats["palettes"] == {"white": 3}
 
@@ -616,7 +616,7 @@ def test_api_sample_loop_variant(client):
     assert r.status_code == 200
 
 
-@pytest.mark.parametrize("morphology", ["curve", "loop", "eyelash", "fragment", "kink"])
+@pytest.mark.parametrize("morphology", ["curve", "loop", "eyelash", "fragment", "pube"])
 def test_api_sample_morphology_choices(client, morphology):
     r = client.get("/api/sample", params={"palette": "dark", "seed": 1, "morphology": morphology})
     assert r.status_code == 200
@@ -759,35 +759,35 @@ def test_clusters_can_increase_hair_count(pdf_bytes):
     assert total_images(0.95) > total_images(0.0)
 
 
-# --- Kink morphology + follicle bulb --------------------------------------
+# --- Pube morphology + follicle bulb --------------------------------------
 
-def test_kink_morphology_is_registered():
-    """kink should appear in the dispatch table and the cm-length map."""
+def test_pube_morphology_is_registered():
+    """pube should appear in the dispatch table and the cm-length map."""
     from app.core import MORPHOLOGIES, MORPHOLOGY_LENGTH_CM
-    assert "kink" in MORPHOLOGIES
-    assert "kink" in MORPHOLOGY_LENGTH_CM
-    lo, hi = MORPHOLOGY_LENGTH_CM["kink"]
+    assert "pube" in MORPHOLOGIES
+    assert "pube" in MORPHOLOGY_LENGTH_CM
+    lo, hi = MORPHOLOGY_LENGTH_CM["pube"]
     assert 0 < lo < hi < 10  # short-ish, body-hair range
 
 
-def test_kink_renderer_produces_non_empty_image():
+def test_pube_renderer_produces_non_empty_image():
     import random
-    from app.core import _generate_kink_hair
-    img = _generate_kink_hair(random.Random(7), palette="dark")
+    from app.core import _generate_pube_hair
+    img = _generate_pube_hair(random.Random(7), palette="dark")
     # The strand should have some non-transparent pixels.
     alpha = img.split()[-1]
     assert alpha.getextrema()[1] > 0
 
 
-def test_kink_strand_visibly_zigzags():
-    """A kink hair should have visibly more direction changes than a curve.
+def test_pube_strand_visibly_zigzags():
+    """A pube hair should have visibly more direction changes than a curve.
 
-    Count alpha-mass columns in the strand image: a kink, projected onto its
+    Count alpha-mass columns in the strand image: a pube, projected onto its
     primary axis, should be wider (more y-spread) than a single bezier curve
     drawn at the same canvas dimensions.
     """
     import random
-    from app.core import _generate_curve_hair, _generate_kink_hair
+    from app.core import _generate_curve_hair, _generate_pube_hair
 
     def vertical_spread(img):
         alpha = img.split()[-1]
@@ -803,10 +803,10 @@ def test_kink_strand_visibly_zigzags():
 
     # Same RNG seed for fair-ish comparison.
     curve_spread = vertical_spread(_generate_curve_hair(random.Random(1), palette="dark"))
-    kink_spread = vertical_spread(_generate_kink_hair(random.Random(1), palette="dark"))
-    # A kink fills more vertical extent because it zigzags.
-    assert kink_spread > curve_spread * 1.3, (
-        f"kink vertical spread {kink_spread} should be >1.3x curve spread {curve_spread}"
+    pube_spread = vertical_spread(_generate_pube_hair(random.Random(1), palette="dark"))
+    # A pube fills more vertical extent because it zigzags.
+    assert pube_spread > curve_spread * 1.3, (
+        f"pube vertical spread {pube_spread} should be >1.3x curve spread {curve_spread}"
     )
 
 

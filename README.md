@@ -23,7 +23,7 @@ Two front-ends, one rendering engine:
   drawn lines.
 - Five morphologies mixed by default: curved strand, laminated loop with
   tail, eyelash (short tight curl), fragment (short wispy piece), and the
-  occasional kink (tight zigzag, body-hair vibe).
+  occasional pube (tight zigzag, body-hair vibe).
 - ~18% of shed strands carry a tiny dark follicle bulb at one end — the
   "club" root that fell out with the hair. Single most diagnostic "yep,
   that's a real hair" detail.

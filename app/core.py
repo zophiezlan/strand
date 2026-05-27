@@ -126,7 +126,7 @@ def _draw_strand_polyline(draw, points, base_color, rng,
     Width tapers from `width_start` to `width_end` along the polyline with a
     small per-segment jitter; colour gets per-pixel jitter so the strand reads
     as a real photographed object rather than a vector stroke. Shared by the
-    bezier-based morphologies and the kink (sine-modulated polyline) one.
+    bezier-based morphologies and the pube (sine-modulated polyline) one.
     """
     width_start *= width_scale
     width_end *= width_scale
@@ -283,7 +283,7 @@ def _generate_eyelash_hair(rng: random.Random, palette: str = "dark",
     return _finalize(img, cw, ch)
 
 
-def _generate_kink_hair(rng: random.Random, palette: str = "dark",
+def _generate_pube_hair(rng: random.Random, palette: str = "dark",
                         base_width: int = 400, base_height: int = 120) -> Image.Image:
     """A tightly coiled hair — pubic / curly body-hair vibe.
 
@@ -294,7 +294,7 @@ def _generate_kink_hair(rng: random.Random, palette: str = "dark",
       • a fast crimp riding on top (the tight zigzag texture)
 
     The two sine modulations are offset perpendicular to the bezier's
-    *tangent* at each sample, so the kinks ride correctly on the curving
+    *tangent* at each sample, so the pubes ride correctly on the curving
     underlying path rather than along a fixed axis. Both modulations are
     bell-enveloped at the ends so the strand doesn't appear cut off.
     """
@@ -328,10 +328,10 @@ def _generate_kink_hair(rng: random.Random, palette: str = "dark",
     slow_amp = arc_len * rng.uniform(0.10, 0.18)
     slow_phase = rng.uniform(0.0, math.tau)
 
-    # Fast crimp on top — 1-3 kinks. More than that reads as a long zigzag
-    # squiggle rather than a short coiled body hair; a real kinked strand only
+    # Fast crimp on top — 1-3 pubes. More than that reads as a long zigzag
+    # squiggle rather than a short coiled body hair; a real pubeed strand only
     # turns back on itself a handful of times. Amplitude bumps up a little to
-    # keep each kink legible now that there are fewer of them.
+    # keep each pube legible now that there are fewer of them.
     fast_cycles = rng.uniform(1.0, 3.0)
     fast_amp = arc_len * rng.uniform(0.06, 0.11)
     fast_phase = rng.uniform(0.0, math.tau)
@@ -349,7 +349,7 @@ def _generate_kink_hair(rng: random.Random, palette: str = "dark",
         ty = (3 * mt * mt * (p1[1] - p0[1]) + 6 * mt * t * (p2[1] - p1[1])
               + 3 * t * t * (p3[1] - p2[1]))
         tlen = math.hypot(tx, ty) or 1.0
-        # Unit perpendicular to the tangent — the kinks ride sideways on the path
+        # Unit perpendicular to the tangent — the pubes ride sideways on the path
         px_dir = -ty / tlen
         py_dir = tx / tlen
         # Bell envelope tapers amplitude at the ends.
@@ -402,7 +402,7 @@ MORPHOLOGIES: dict[str, "callable"] = {
     "loop":     _generate_loop_hair,
     "eyelash":  _generate_eyelash_hair,
     "fragment": _generate_fragment_hair,
-    "kink":     _generate_kink_hair,
+    "pube":     _generate_pube_hair,
 }
 
 
@@ -415,7 +415,7 @@ MORPHOLOGY_LENGTH_CM: dict[str, tuple[float, float]] = {
     "loop":     (5.0, 18.0),
     "eyelash":  (0.7, 1.4),
     "fragment": (1.5, 4.0),
-    "kink":     (1.5, 4.0),     # pubic / tightly coiled body hair
+    "pube":     (1.5, 4.0),     # pubic / tightly coiled body hair
 }
 
 # Substrate unit conversions per centimetre.
@@ -444,7 +444,7 @@ def generate_hair_with_morphology(
     loop_chance: float = 0.15,
     eyelash_chance: float = 0.08,
     fragment_chance: float = 0.08,
-    kink_chance: float = 0.06,
+    pube_chance: float = 0.06,
 ) -> tuple[Image.Image, str, str]:
     """Pick a morphology by weighted random choice; return (image, morphology, palette).
 
@@ -464,9 +464,9 @@ def generate_hair_with_morphology(
     elif r < loop_chance + eyelash_chance + fragment_chance:
         morph = "fragment"
         renderer = _generate_fragment_hair
-    elif r < loop_chance + eyelash_chance + fragment_chance + kink_chance:
-        morph = "kink"
-        renderer = _generate_kink_hair
+    elif r < loop_chance + eyelash_chance + fragment_chance + pube_chance:
+        morph = "pube"
+        renderer = _generate_pube_hair
     else:
         morph = "curve"
         renderer = _generate_curve_hair
@@ -486,13 +486,13 @@ def generate_hair(
     loop_chance: float = 0.15,
     eyelash_chance: float = 0.08,
     fragment_chance: float = 0.08,
-    kink_chance: float = 0.06,
+    pube_chance: float = 0.06,
 ) -> Image.Image:
     """Pick a morphology by weighted random choice; default is the curved strand."""
     img, _, _ = generate_hair_with_morphology(
         rng, palette=palette,
         loop_chance=loop_chance, eyelash_chance=eyelash_chance,
-        fragment_chance=fragment_chance, kink_chance=kink_chance,
+        fragment_chance=fragment_chance, pube_chance=pube_chance,
     )
     return img
 
@@ -509,7 +509,7 @@ def _empty_stats() -> dict:
     """
     return {
         "hairs": 0,
-        "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0, "kink": 0},
+        "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0, "pube": 0},
         "palettes": {},
         "pages_touched": 0,
         "clusters": 0,
@@ -647,7 +647,7 @@ def _morph_kwargs(opts) -> dict:
         loop_chance=opts.loop_chance,
         eyelash_chance=opts.eyelash_chance,
         fragment_chance=opts.fragment_chance,
-        kink_chance=opts.kink_chance,
+        pube_chance=opts.pube_chance,
     )
 
 
@@ -725,7 +725,7 @@ class InjectOptions:
     eyelash_chance: float = 0.08
     fragment_chance: float = 0.08
     # Pubic / body-hair morphology — low default so it's a surprise, not a theme.
-    kink_chance: float = 0.06
+    pube_chance: float = 0.06
     # Probability that an already-placed hair gets a "buddy" placed nearby,
     # rolled repeatedly per hair (so a single hair can be the head of a small
     # tuft of 1–3). Real shed hair clumps; even spread looks artificial.
@@ -1469,7 +1469,7 @@ def strand_zip_bytes(
                 loop_chance=opts.loop_chance,
                 eyelash_chance=opts.eyelash_chance,
                 fragment_chance=opts.fragment_chance,
-                kink_chance=opts.kink_chance,
+                pube_chance=opts.pube_chance,
                 cluster_chance=opts.cluster_chance,
                 seed=per_entry_seed,
             )

@@ -44,6 +44,19 @@ MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# The vendored Pyodide runtime (scripts/fetch_pyodide.py). Filenames are
+# version-pinned, so the bytes never change under a given name — safe to mark
+# immutable and cache for a year. Absent in plain dev; the worker then boots
+# from the CDN instead, so we don't require the directory to exist.
+PYODIDE_DIR = STATIC_DIR / "pyodide"
+
+
+class _ImmutableStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return resp
+
 # --- Rate limiting ---------------------------------------------------------
 limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
@@ -344,6 +357,12 @@ def api_sample(
         headers={"Cache-Control": "public, max-age=3600"},
     )
 
+
+# The vendored Pyodide runtime gets its own mount so it can carry immutable
+# cache headers. Mounted before the catch-all "/" so it wins for /pyodide/*.
+# check_dir=False: the directory only exists in prod builds; when it's missing
+# these paths 404 and the worker falls back to the CDN.
+app.mount("/pyodide", _ImmutableStaticFiles(directory=str(PYODIDE_DIR), check_dir=False), name="pyodide")
 
 # Static mount must be registered AFTER every explicit route above (Starlette
 # tries routes in declaration order). See note near the top of this file.

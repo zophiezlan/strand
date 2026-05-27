@@ -11,6 +11,12 @@ WORKDIR /app
 
 COPY pyproject.toml ./
 COPY app ./app
+COPY scripts ./scripts
+
+# Vendor the Pyodide runtime + wheels into app/static/pyodide/ so the in-browser
+# engine boots from this origin instead of a third-party CDN. Stdlib-only, needs
+# network at build. If this layer is ever skipped the worker falls back to the CDN.
+RUN python scripts/fetch_pyodide.py
 
 RUN pip install .
 

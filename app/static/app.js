@@ -33,8 +33,12 @@ import * as engine from "/pyodide_engine.js";
   const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
 
   function applyTheme(setting) {
-    const dark = setting === "dark" || (setting === "system" && themeMedia.matches);
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    const dark =
+      setting === "dark" || (setting === "system" && themeMedia.matches);
+    document.documentElement.setAttribute(
+      "data-theme",
+      dark ? "dark" : "light",
+    );
   }
 
   let themeSetting = localStorage.getItem(THEME_KEY) || "system";
@@ -61,8 +65,25 @@ import * as engine from "/pyodide_engine.js";
 
   settingsBtn.addEventListener("click", () => settingsModal.showModal());
 
-  const IMAGE_SUFFIXES = new Set([".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp"]);
-  const SUPPORTED = [".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".pdf", ".pptx", ".zip"];
+  const IMAGE_SUFFIXES = new Set([
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".webp",
+  ]);
+  const SUPPORTED = [
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".bmp",
+    ".webp",
+    ".pdf",
+    ".pptx",
+    ".zip",
+  ];
   const MAX_BYTES = 25 * 1024 * 1024;
 
   /** Array of File objects currently selected for upload (always >= 0). */
@@ -78,7 +99,7 @@ import * as engine from "/pyodide_engine.js";
       can save it on click instead of the page auto-downloading. */
   let lastResultBlob = null;
   let lastResultName = null;
-  let lastPreviewUrl = null;  // separate object URL for inline preview img
+  let lastPreviewUrl = null; // separate object URL for inline preview img
   /** Object URL for the original (un-haired) upload, used by the hold-to-
       peek Compare button. Only populated for single-image responses. */
   let lastOriginalUrl = null;
@@ -120,14 +141,16 @@ import * as engine from "/pyodide_engine.js";
     fileInput.click();
   });
   fileInput.addEventListener("change", () => {
-    if (fileInput.files && fileInput.files.length) setFiles(Array.from(fileInput.files));
+    if (fileInput.files && fileInput.files.length)
+      setFiles(Array.from(fileInput.files));
   });
   pickFolderLink.addEventListener("click", (e) => {
     e.preventDefault();
     folderInput.click();
   });
   folderInput.addEventListener("change", () => {
-    if (folderInput.files && folderInput.files.length) setFiles(Array.from(folderInput.files));
+    if (folderInput.files && folderInput.files.length)
+      setFiles(Array.from(folderInput.files));
   });
 
   for (const evt of ["dragenter", "dragover"]) {
@@ -166,7 +189,9 @@ import * as engine from "/pyodide_engine.js";
     if (_engineWarmed) return;
     if (useServerCheckbox.checked) return;
     _engineWarmed = true;
-    engine.prefetch().catch(() => { /* surface only when the user actually runs */ });
+    engine.prefetch().catch(() => {
+      /* surface only when the user actually runs */
+    });
   }
   // If the user ticks the server checkbox we don't need to warm; if they
   // later untick, kick the boot off then.
@@ -176,10 +201,12 @@ import * as engine from "/pyodide_engine.js";
 
   async function runViaEngine({ palette, intensity, seed, nameSuffix }) {
     // Bytes for the engine. Reading concurrently is faster on multi-file.
-    const fileBuffers = await Promise.all(currentFiles.map(async (f) => ({
-      name: fileRelPath(f),
-      bytes: new Uint8Array(await f.arrayBuffer()),
-    })));
+    const fileBuffers = await Promise.all(
+      currentFiles.map(async (f) => ({
+        name: fileRelPath(f),
+        bytes: new Uint8Array(await f.arrayBuffer()),
+      })),
+    );
     const kickoff = kickoffMessage(currentFiles, intensity);
     return engine.run({
       files: fileBuffers,
@@ -187,9 +214,8 @@ import * as engine from "/pyodide_engine.js";
       intensity,
       seed,
       nameSuffix,
-      onStatus: (msg) => showWorking(
-        msg === "Ready" || msg === "Adding hair" ? kickoff : msg
-      ),
+      onStatus: (msg) =>
+        showWorking(msg === "Ready" || msg === "Adding hair" ? kickoff : msg),
     });
   }
 
@@ -198,12 +224,16 @@ import * as engine from "/pyodide_engine.js";
   // the user has signed up for that combination, set expectations up front
   // so the spinner doesn't feel mysterious.
   function kickoffMessage(files, intensity) {
-    const wild = intensity === "hirsute" || intensity === "werewolf" || intensity === "cousin-itt";
+    const wild =
+      intensity === "hirsute" ||
+      intensity === "werewolf" ||
+      intensity === "cousin-itt";
     const heavy = files.some((f) => {
       const s = suffixOf(f.name);
       return s === ".pdf" || s === ".pptx" || s === ".zip";
     });
-    if (wild && heavy) return "Adding hair — a dense deck takes a minute or two";
+    if (wild && heavy)
+      return "Adding hair — a dense deck takes a minute or two";
     if (wild) return "Adding hair — this one's a lot";
     if (heavy && files.length > 1) return "Adding hair across your files";
     if (heavy) return "Adding hair through the pages";
@@ -226,7 +256,9 @@ import * as engine from "/pyodide_engine.js";
       try {
         const body = await res.json();
         if (body && body.detail) detail = body.detail;
-      } catch (_) { /* not JSON */ }
+      } catch (_) {
+        /* not JSON */
+      }
       throw new Error(detail);
     }
     const ab = await res.arrayBuffer();
@@ -239,7 +271,8 @@ import * as engine from "/pyodide_engine.js";
     return {
       bytes: new Uint8Array(ab),
       name: m ? m[1] : currentFiles[0].name,
-      contentType: res.headers.get("Content-Type") || "application/octet-stream",
+      contentType:
+        res.headers.get("Content-Type") || "application/octet-stream",
       seed: Number(res.headers.get("X-Strand-Seed")) || null,
       stats: statsHeader ? JSON.parse(statsHeader) : null,
       haired: haired != null ? Number(haired) : null,
@@ -252,14 +285,20 @@ import * as engine from "/pyodide_engine.js";
     // Filter to supported types; surface a friendly message if everything got dropped.
     const accepted = files.filter((f) => SUPPORTED.includes(suffixOf(f.name)));
     if (!accepted.length) {
-      const tried = files.map((f) => suffixOf(f.name) || "(no extension)").join(", ");
-      showError(`None of those are supported (${tried}). Try ${SUPPORTED.join(", ")}.`);
+      const tried = files
+        .map((f) => suffixOf(f.name) || "(no extension)")
+        .join(", ");
+      showError(
+        `None of those are supported (${tried}). Try ${SUPPORTED.join(", ")}.`,
+      );
       return;
     }
 
     const total = accepted.reduce((s, f) => s + f.size, 0);
     if (total > MAX_BYTES) {
-      showError(`Selection is ${(total / (1024 * 1024)).toFixed(1)} MB — limit is 25 MB total.`);
+      showError(
+        `Selection is ${(total / (1024 * 1024)).toFixed(1)} MB — limit is 25 MB total.`,
+      );
       return;
     }
 
@@ -287,8 +326,14 @@ import * as engine from "/pyodide_engine.js";
     downloadBtn.disabled = true;
     lastResultBlob = null;
     lastResultName = null;
-    if (lastPreviewUrl) { URL.revokeObjectURL(lastPreviewUrl); lastPreviewUrl = null; }
-    if (lastOriginalUrl) { URL.revokeObjectURL(lastOriginalUrl); lastOriginalUrl = null; }
+    if (lastPreviewUrl) {
+      URL.revokeObjectURL(lastPreviewUrl);
+      lastPreviewUrl = null;
+    }
+    if (lastOriginalUrl) {
+      URL.revokeObjectURL(lastOriginalUrl);
+      lastOriginalUrl = null;
+    }
     resultEl.hidden = lastSeed == null;
     rerollSameBtn.disabled = lastSeed == null;
   }
@@ -301,11 +346,17 @@ import * as engine from "/pyodide_engine.js";
     // Try to surface a common folder root when the user picked a directory.
     const rels = accepted.map(fileRelPath);
     const roots = new Set(rels.map((p) => p.split("/")[0]));
-    const root = roots.size === 1 && rels.every((p) => p.includes("/")) ? roots.values().next().value : null;
+    const root =
+      roots.size === 1 && rels.every((p) => p.includes("/"))
+        ? roots.values().next().value
+        : null;
     const skipped = originalCount - accepted.length;
-    const skippedNote = skipped > 0 ? ` (${skipped} we can't handle will stay out)` : "";
+    const skippedNote =
+      skipped > 0 ? ` (${skipped} we can't handle will stay out)` : "";
     return {
-      title: root ? `${root}/ — ${accepted.length} files` : `${accepted.length} files`,
+      title: root
+        ? `${root}/ — ${accepted.length} files`
+        : `${accepted.length} files`,
       subtitle: `${sizeKb} — you'll get them back as a zip${skippedNote}`,
     };
   }
@@ -327,7 +378,9 @@ import * as engine from "/pyodide_engine.js";
     statusEl.append(document.createTextNode(msg));
     const runtime = document.createElement("span");
     runtime.className = "status-runtime";
-    runtime.textContent = useServerCheckbox.checked ? "on the server" : "in your browser";
+    runtime.textContent = useServerCheckbox.checked
+      ? "on the server"
+      : "in your browser";
     statusEl.append(runtime);
   }
 
@@ -374,8 +427,18 @@ import * as engine from "/pyodide_engine.js";
       const seedForRun = reuseSeed && lastSeed != null ? lastSeed : null;
 
       const result = useServerCheckbox.checked
-        ? await runViaServer({ palette, intensity, seed: seedForRun, nameSuffix })
-        : await runViaEngine({ palette, intensity, seed: seedForRun, nameSuffix });
+        ? await runViaServer({
+            palette,
+            intensity,
+            seed: seedForRun,
+            nameSuffix,
+          })
+        : await runViaEngine({
+            palette,
+            intensity,
+            seed: seedForRun,
+            nameSuffix,
+          });
 
       if (result.seed != null) {
         lastSeed = String(result.seed);
@@ -403,16 +466,22 @@ import * as engine from "/pyodide_engine.js";
 
       resultEl.hidden = false;
 
-      const previewSingleImage = currentFiles.length === 1 && IMAGE_SUFFIXES.has(suffix);
-      const previewPdf = currentFiles.length === 1 && suffix === ".pdf"
-        && result.previewAfter && result.previewBefore;
+      const previewSingleImage =
+        currentFiles.length === 1 && IMAGE_SUFFIXES.has(suffix);
+      const previewPdf =
+        currentFiles.length === 1 &&
+        suffix === ".pdf" &&
+        result.previewAfter &&
+        result.previewBefore;
 
       if (isZipResponse) {
         const parts = [];
         if (haired) parts.push(`<strong>${haired}</strong> got hair`);
         if (skipped && Number(skipped) > 0) parts.push(`${skipped} left alone`);
-        if (errored && Number(errored) > 0) parts.push(`${errored} had trouble`);
-        zipSummaryEl.innerHTML = parts.join(" · ") +
+        if (errored && Number(errored) > 0)
+          parts.push(`${errored} had trouble`);
+        zipSummaryEl.innerHTML =
+          parts.join(" · ") +
           ` &nbsp;·&nbsp; there's a summary inside the zip if you want the details.`;
         zipSummaryEl.hidden = false;
         showInfo("Done — your zip's ready.");
@@ -429,8 +498,12 @@ import * as engine from "/pyodide_engine.js";
         // PDFs come back with a before/after pair of PNGs — one of the page
         // that picked up the first round of hairs. Same compare flow as
         // images, just sourced from the engine rather than the original file.
-        lastPreviewUrl = URL.createObjectURL(new Blob([result.previewAfter], { type: "image/png" }));
-        lastOriginalUrl = URL.createObjectURL(new Blob([result.previewBefore], { type: "image/png" }));
+        lastPreviewUrl = URL.createObjectURL(
+          new Blob([result.previewAfter], { type: "image/png" }),
+        );
+        lastOriginalUrl = URL.createObjectURL(
+          new Blob([result.previewBefore], { type: "image/png" }),
+        );
         previewImg.src = lastPreviewUrl;
         previewEl.hidden = false;
         compareBtn.hidden = false;
@@ -478,19 +551,35 @@ import * as engine from "/pyodide_engine.js";
   window.addEventListener("blur", endPeek);
   // Keyboard accessibility — Space/Enter on a focused button mimic mouse.
   compareBtn.addEventListener("keydown", (e) => {
-    if (e.key === " " || e.key === "Enter") { e.preventDefault(); startPeek(e); }
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      startPeek(e);
+    }
   });
   compareBtn.addEventListener("keyup", (e) => {
-    if (e.key === " " || e.key === "Enter") { endPeek(); }
+    if (e.key === " " || e.key === "Enter") {
+      endPeek();
+    }
   });
 
   function renderStats(headerValue) {
-    if (!headerValue) { statsEl.hidden = true; return; }
+    if (!headerValue) {
+      statsEl.hidden = true;
+      return;
+    }
     let s;
-    try { s = JSON.parse(headerValue); } catch { statsEl.hidden = true; return; }
+    try {
+      s = JSON.parse(headerValue);
+    } catch {
+      statsEl.hidden = true;
+      return;
+    }
 
     const total = s.hairs || 0;
-    if (total === 0) { statsEl.hidden = true; return; }
+    if (total === 0) {
+      statsEl.hidden = true;
+      return;
+    }
 
     const pages = s.pages_touched || 0;
     const clusters = s.clusters || 0;
@@ -515,7 +604,8 @@ import * as engine from "/pyodide_engine.js";
       let s = `${total} hairs`;
       if (pages > 1) s += ` across ${pages} pages`;
       if (clusters > 0) {
-        s += clusters === 1 ? ", all huddled together" : `, in ${clusters} clumps`;
+        s +=
+          clusters === 1 ? ", all huddled together" : `, in ${clusters} clumps`;
       }
       lines.push(s + ".");
     }
@@ -529,13 +619,21 @@ import * as engine from "/pyodide_engine.js";
       }
     } else if (morphs.length > 1) {
       const [headName, headN] = morphs[0];
-      const rest = morphs.slice(1).map(([name, n]) => `${n} ${pluralize(name, n)}`);
-      lines.push(`Mostly ${pluralize(headName, headN)} (${headN}), with ${joinList(rest)}.`);
+      const rest = morphs
+        .slice(1)
+        .map(([name, n]) => `${n} ${pluralize(name, n)}`);
+      lines.push(
+        `Mostly ${pluralize(headName, headN)} (${headN}), with ${joinList(rest)}.`,
+      );
     }
 
     // Line 3: colour.
     if (palettes.length === 1) {
-      lines.push(total === 1 ? `One ${palettes[0][0]} strand.` : `All ${palettes[0][0]}.`);
+      lines.push(
+        total === 1
+          ? `One ${palettes[0][0]} strand.`
+          : `All ${palettes[0][0]}.`,
+      );
     } else if (palettes.length > 1) {
       const parts = palettes.map(([name, n]) => `${n} ${name}`);
       lines.push(`A mix: ${joinList(parts)}.`);
@@ -549,7 +647,9 @@ import * as engine from "/pyodide_engine.js";
       const min = sorted[0];
       const max = sorted[sorted.length - 1];
       const median = sorted[Math.floor(sorted.length / 2)];
-      lines.push(`${min.toFixed(1)} to ${max.toFixed(1)} cm long, median ${median.toFixed(1)}.`);
+      lines.push(
+        `${min.toFixed(1)} to ${max.toFixed(1)} cm long, median ${median.toFixed(1)}.`,
+      );
     }
 
     // Line 5: aim. Frame it as the story — how many found something to land
@@ -559,9 +659,13 @@ import * as engine from "/pyodide_engine.js";
       if (missed === 0) {
         lines.push(`Every one landed on something.`);
       } else if (missed === 1) {
-        lines.push(`${contentHits} of ${total} landed on content; one drifted into the margin.`);
+        lines.push(
+          `${contentHits} of ${total} landed on content; one drifted into the margin.`,
+        );
       } else {
-        lines.push(`${contentHits} of ${total} landed on content; the other ${missed} hit blank space.`);
+        lines.push(
+          `${contentHits} of ${total} landed on content; the other ${missed} hit blank space.`,
+        );
       }
     }
 
@@ -569,9 +673,11 @@ import * as engine from "/pyodide_engine.js";
     if (substrate) {
       const nat = `${formatNative(substrate)}`;
       const cm = `${substrate.width_cm} × ${substrate.height_cm} cm`;
-      const depth = substrate.page_count ? `, ${substrate.page_count} pages deep`
-                  : substrate.slide_count ? `, ${substrate.slide_count} slides deep`
-                  : "";
+      const depth = substrate.page_count
+        ? `, ${substrate.page_count} pages deep`
+        : substrate.slide_count
+          ? `, ${substrate.slide_count} slides deep`
+          : "";
       lines.push(`All this on a ${nat} canvas (≈${cm})${depth}.`);
     }
 
@@ -622,8 +728,16 @@ import * as engine from "/pyodide_engine.js";
   }
 
   function escapeHtml(s) {
-    return s.replace(/[&<>"']/g, (ch) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]),
+    return s.replace(
+      /[&<>"']/g,
+      (ch) =>
+        ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[ch],
     );
   }
 
@@ -676,12 +790,21 @@ import * as engine from "/pyodide_engine.js";
   // --- Keyboard: Enter to submit, R/S for re-roll ---
   document.addEventListener("keydown", (e) => {
     // Don't hijack typing in the suffix field or other text inputs.
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    if (
+      e.target instanceof HTMLInputElement ||
+      e.target instanceof HTMLTextAreaElement
+    )
+      return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === "Enter" && !goBtn.disabled) { goBtn.click(); }
+    if (e.key === "Enter" && !goBtn.disabled) {
+      goBtn.click();
+    }
     // "R" picks a fresh seed — same effect as Strand it, kept as a shortcut.
-    else if (e.key.toLowerCase() === "r" && !goBtn.disabled) { goBtn.click(); }
-    else if (e.key.toLowerCase() === "s" && !rerollSameBtn.disabled) { rerollSameBtn.click(); }
+    else if (e.key.toLowerCase() === "r" && !goBtn.disabled) {
+      goBtn.click();
+    } else if (e.key.toLowerCase() === "s" && !rerollSameBtn.disabled) {
+      rerollSameBtn.click();
+    }
   });
 
   // --- Lightbox (click preview to zoom) -----------------------------------
@@ -692,12 +815,13 @@ import * as engine from "/pyodide_engine.js";
   const lb = { scale: 1, tx: 0, ty: 0, dragging: false, sx: 0, sy: 0 };
 
   function applyLightboxTransform() {
-    lightboxImg.style.transform =
-      `translate(${lb.tx}px, ${lb.ty}px) scale(${lb.scale})`;
+    lightboxImg.style.transform = `translate(${lb.tx}px, ${lb.ty}px) scale(${lb.scale})`;
   }
 
   function resetLightbox() {
-    lb.scale = 1; lb.tx = 0; lb.ty = 0;
+    lb.scale = 1;
+    lb.tx = 0;
+    lb.ty = 0;
     applyLightboxTransform();
   }
 
@@ -721,21 +845,25 @@ import * as engine from "/pyodide_engine.js";
   });
 
   // Wheel to zoom — anchored toward the cursor for natural zoom-in feel.
-  lightbox.addEventListener("wheel", (e) => {
-    e.preventDefault();
-    const factor = Math.exp(-e.deltaY * 0.0015);
-    const next = Math.max(0.2, Math.min(8, lb.scale * factor));
-    // Anchor zoom around the cursor: shift translation so the point
-    // under the cursor stays put.
-    const rect = lightboxImg.getBoundingClientRect();
-    const cx = e.clientX - (rect.left + rect.width / 2);
-    const cy = e.clientY - (rect.top + rect.height / 2);
-    const ratio = next / lb.scale;
-    lb.tx -= cx * (ratio - 1);
-    lb.ty -= cy * (ratio - 1);
-    lb.scale = next;
-    applyLightboxTransform();
-  }, { passive: false });
+  lightbox.addEventListener(
+    "wheel",
+    (e) => {
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.0015);
+      const next = Math.max(0.2, Math.min(8, lb.scale * factor));
+      // Anchor zoom around the cursor: shift translation so the point
+      // under the cursor stays put.
+      const rect = lightboxImg.getBoundingClientRect();
+      const cx = e.clientX - (rect.left + rect.width / 2);
+      const cy = e.clientY - (rect.top + rect.height / 2);
+      const ratio = next / lb.scale;
+      lb.tx -= cx * (ratio - 1);
+      lb.ty -= cy * (ratio - 1);
+      lb.scale = next;
+      applyLightboxTransform();
+    },
+    { passive: false },
+  );
 
   // Mouse drag-pan.
   lightboxImg.addEventListener("mousedown", (e) => {
@@ -750,41 +878,53 @@ import * as engine from "/pyodide_engine.js";
     lb.ty = e.clientY - lb.sy;
     applyLightboxTransform();
   });
-  window.addEventListener("mouseup", () => { lb.dragging = false; });
+  window.addEventListener("mouseup", () => {
+    lb.dragging = false;
+  });
 
   // Touch: single-finger pan, two-finger pinch-zoom.
   let pinchDist = 0;
   let pinchScale = 1;
-  lightboxImg.addEventListener("touchstart", (e) => {
-    if (e.touches.length === 2) {
+  lightboxImg.addEventListener(
+    "touchstart",
+    (e) => {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        pinchDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY,
+        );
+        pinchScale = lb.scale;
+      } else if (e.touches.length === 1) {
+        lb.dragging = true;
+        lb.sx = e.touches[0].clientX - lb.tx;
+        lb.sy = e.touches[0].clientY - lb.ty;
+      }
+    },
+    { passive: false },
+  );
+  lightboxImg.addEventListener(
+    "touchmove",
+    (e) => {
       e.preventDefault();
-      pinchDist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY,
-      );
-      pinchScale = lb.scale;
-    } else if (e.touches.length === 1) {
-      lb.dragging = true;
-      lb.sx = e.touches[0].clientX - lb.tx;
-      lb.sy = e.touches[0].clientY - lb.ty;
-    }
-  }, { passive: false });
-  lightboxImg.addEventListener("touchmove", (e) => {
-    e.preventDefault();
-    if (e.touches.length === 2) {
-      const d = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY,
-      );
-      lb.scale = Math.max(0.2, Math.min(8, pinchScale * (d / pinchDist)));
-      applyLightboxTransform();
-    } else if (e.touches.length === 1 && lb.dragging) {
-      lb.tx = e.touches[0].clientX - lb.sx;
-      lb.ty = e.touches[0].clientY - lb.sy;
-      applyLightboxTransform();
-    }
-  }, { passive: false });
-  lightboxImg.addEventListener("touchend", () => { lb.dragging = false; });
+      if (e.touches.length === 2) {
+        const d = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY,
+        );
+        lb.scale = Math.max(0.2, Math.min(8, pinchScale * (d / pinchDist)));
+        applyLightboxTransform();
+      } else if (e.touches.length === 1 && lb.dragging) {
+        lb.tx = e.touches[0].clientX - lb.sx;
+        lb.ty = e.touches[0].clientY - lb.sy;
+        applyLightboxTransform();
+      }
+    },
+    { passive: false },
+  );
+  lightboxImg.addEventListener("touchend", () => {
+    lb.dragging = false;
+  });
 
   // Double-click resets zoom + position.
   lightboxImg.addEventListener("dblclick", resetLightbox);

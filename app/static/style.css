@@ -1,12 +1,12 @@
 :root {
   --bg: #f6f5f2;
   --panel: #ffffff;
-  --panel-soft: #f3efe7;       /* result-meta card, ghost hover, stats */
+  --panel-soft: #f3efe7; /* result-meta card, ghost hover, stats */
   --panel-soft-hover: #ebe6dc;
   --ink: #1a1a1a;
   --ink-soft: #555;
   --line: #e2dfd8;
-  --line-strong: #c8c4ba;       /* hover borders */
+  --line-strong: #c8c4ba; /* hover borders */
   --accent: #1a1a1a;
   --accent-ink: #ffffff;
   --selected: #1a1a1a;
@@ -49,7 +49,9 @@
   color-scheme: dark;
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
 /* One stray hair on the drop zone. The hair PNG comes from /api/sample,
    rendered by the same generator the file pipeline uses. It's pinned
@@ -67,13 +69,21 @@
   transform-origin: center center;
   transition: opacity 400ms ease;
 }
-.drop-strand.ready { opacity: 0.85; }
+.drop-strand.ready {
+  opacity: 0.85;
+}
 
-html, body {
+html,
+body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font:
+    16px/1.5 system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
 }
 
 .wrap {
@@ -103,11 +113,17 @@ header .tag {
   padding: 28px 20px 24px;
   text-align: center;
   cursor: pointer;
-  transition: border-color 140ms ease, background 140ms ease, transform 160ms ease, box-shadow 160ms ease;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    transform 160ms ease,
+    box-shadow 160ms ease;
   box-shadow: var(--shadow);
 }
 
-.drop:hover { border-color: var(--line-strong); }
+.drop:hover {
+  border-color: var(--line-strong);
+}
 .drop.dragover {
   border-color: var(--accent);
   border-style: solid;
@@ -121,31 +137,64 @@ header .tag {
   border-color: var(--accent);
 }
 
-.drop-inner { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
 .drop-glyph {
   width: 96px;
   height: 32px;
   color: var(--ink);
   opacity: 0.85;
-  transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1), opacity 200ms ease;
+  transition:
+    transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 200ms ease;
   animation: glyph-rest 5.5s ease-in-out infinite;
   transform-origin: 50% 70%;
 }
-.drop:hover .drop-glyph { animation-play-state: paused; transform: translateY(-1px) rotate(-2deg); opacity: 1; }
-.drop.dragover .drop-glyph { animation-play-state: paused; transform: translateY(-2px) scale(1.06) rotate(-3deg); opacity: 1; }
+.drop:hover .drop-glyph {
+  animation-play-state: paused;
+  transform: translateY(-1px) rotate(-2deg);
+  opacity: 1;
+}
+.drop.dragover .drop-glyph {
+  animation-play-state: paused;
+  transform: translateY(-2px) scale(1.06) rotate(-3deg);
+  opacity: 1;
+}
 
 @keyframes glyph-rest {
-  0%, 100% { transform: translateY(0) rotate(0); }
-  50%      { transform: translateY(-1px) rotate(1.2deg); }
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  50% {
+    transform: translateY(-1px) rotate(1.2deg);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .drop-glyph { animation: none; }
-  .result { animation: none; }
-  .primary:not(:disabled) { animation: none; }
+  .drop-glyph {
+    animation: none;
+  }
+  .result {
+    animation: none;
+  }
+  .primary:not(:disabled) {
+    animation: none;
+  }
 }
-.drop-text strong { display: block; font-size: 17px; margin-top: 2px; }
-.drop-text span { color: var(--ink-soft); font-size: 14px; }
+.drop-text strong {
+  display: block;
+  font-size: 17px;
+  margin-top: 2px;
+}
+.drop-text span {
+  color: var(--ink-soft);
+  font-size: 14px;
+}
 .drop-text a {
   color: var(--ink);
   font-weight: 500;
@@ -153,8 +202,14 @@ header .tag {
   border-bottom: 1px dotted transparent;
   transition: border-color 140ms ease;
 }
-.drop-text a:hover { border-bottom-color: var(--ink); }
-.drop-meta { color: var(--ink-soft); font-size: 12px; margin-top: 8px; }
+.drop-text a:hover {
+  border-bottom-color: var(--ink);
+}
+.drop-meta {
+  color: var(--ink-soft);
+  font-size: 12px;
+  margin-top: 8px;
+}
 
 /* Controls */
 .controls {
@@ -177,7 +232,11 @@ legend {
   font-weight: 500;
 }
 
-.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 /* Palette + density share the same 3-column grid so the two selectors read
    as siblings. Palette has 7 chips → 3 rows (last row 1 chip in the leftmost
@@ -204,10 +263,15 @@ legend {
   justify-content: center;
   gap: 9px;
   white-space: nowrap;
-  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 120ms ease;
 }
 
-.chip:hover { border-color: var(--line-strong); }
+.chip:hover {
+  border-color: var(--line-strong);
+}
 .chip.selected {
   background: var(--selected);
   color: var(--accent-ink);
@@ -216,19 +280,43 @@ legend {
      get the same tint so picking "red" reads as a connected pair. */
   border-color: var(--palette-tint, var(--selected));
   box-shadow: 0 0 0 2px var(--palette-tint-soft, transparent);
-  transition: background 120ms ease, color 120ms ease,
-              border-color 200ms ease, box-shadow 200ms ease;
+  transition:
+    background 120ms ease,
+    color 120ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
 }
 
 /* Per-palette tint tokens — the visible highlight tone from each palette,
    nudged toward legibility against the dark fill of a selected chip. */
-.controls[data-palette="dark"]   { --palette-tint: rgb(110, 84, 64); --palette-tint-soft: rgba(110, 84, 64, 0.25); }
-.controls[data-palette="brown"]  { --palette-tint: rgb(140, 95, 55);  --palette-tint-soft: rgba(140, 95, 55, 0.28); }
-.controls[data-palette="blonde"] { --palette-tint: rgb(210, 180, 130);--palette-tint-soft: rgba(210, 180, 130, 0.32); }
-.controls[data-palette="grey"]   { --palette-tint: rgb(170, 168, 165);--palette-tint-soft: rgba(170, 168, 165, 0.28); }
-.controls[data-palette="white"]  { --palette-tint: rgb(220, 215, 205);--palette-tint-soft: rgba(220, 215, 205, 0.30); }
-.controls[data-palette="red"]    { --palette-tint: rgb(185, 95, 55);  --palette-tint-soft: rgba(185, 95, 55, 0.30); }
-.controls[data-palette="mixed"]  { --palette-tint: rgb(160, 110, 70); --palette-tint-soft: rgba(160, 110, 70, 0.28); }
+.controls[data-palette="dark"] {
+  --palette-tint: rgb(110, 84, 64);
+  --palette-tint-soft: rgba(110, 84, 64, 0.25);
+}
+.controls[data-palette="brown"] {
+  --palette-tint: rgb(140, 95, 55);
+  --palette-tint-soft: rgba(140, 95, 55, 0.28);
+}
+.controls[data-palette="blonde"] {
+  --palette-tint: rgb(210, 180, 130);
+  --palette-tint-soft: rgba(210, 180, 130, 0.32);
+}
+.controls[data-palette="grey"] {
+  --palette-tint: rgb(170, 168, 165);
+  --palette-tint-soft: rgba(170, 168, 165, 0.28);
+}
+.controls[data-palette="white"] {
+  --palette-tint: rgb(220, 215, 205);
+  --palette-tint-soft: rgba(220, 215, 205, 0.3);
+}
+.controls[data-palette="red"] {
+  --palette-tint: rgb(185, 95, 55);
+  --palette-tint-soft: rgba(185, 95, 55, 0.3);
+}
+.controls[data-palette="mixed"] {
+  --palette-tint: rgb(160, 110, 70);
+  --palette-tint-soft: rgba(160, 110, 70, 0.28);
+}
 
 /* Palette chips show a colour-range swatch — a horizontal gradient from the
    palette's lower bound to its upper bound. Layout (padding, height, gap)
@@ -244,22 +332,39 @@ legend {
   background: linear-gradient(to right, #888, #ccc); /* fallback */
 }
 
-.palette-chip[data-value="dark"]   .chip-sample { background: linear-gradient(to right, rgb(10,6,4),       rgb(45,32,28)); }
-.palette-chip[data-value="brown"]  .chip-sample { background: linear-gradient(to right, rgb(45,30,18),     rgb(95,65,38)); }
-.palette-chip[data-value="blonde"] .chip-sample { background: linear-gradient(to right, rgb(130,100,55),   rgb(210,180,130)); }
-.palette-chip[data-value="grey"]   .chip-sample { background: linear-gradient(to right, rgb(90,88,85),     rgb(170,168,165)); }
-.palette-chip[data-value="white"]  .chip-sample { background: linear-gradient(to right, rgb(200,198,195),  rgb(235,233,230)); }
-.palette-chip[data-value="red"]    .chip-sample { background: linear-gradient(to right, rgb(90,38,18),     rgb(165,80,42)); }
-.palette-chip[data-value="mixed"]  .chip-sample {
-  background: linear-gradient(to right,
-    rgb(10,6,4) 0%,
-    rgb(95,65,38) 22%,
-    rgb(210,180,130) 45%,
-    rgb(165,80,42) 68%,
-    rgb(170,168,165) 90%);
+.palette-chip[data-value="dark"] .chip-sample {
+  background: linear-gradient(to right, rgb(10, 6, 4), rgb(45, 32, 28));
+}
+.palette-chip[data-value="brown"] .chip-sample {
+  background: linear-gradient(to right, rgb(45, 30, 18), rgb(95, 65, 38));
+}
+.palette-chip[data-value="blonde"] .chip-sample {
+  background: linear-gradient(to right, rgb(130, 100, 55), rgb(210, 180, 130));
+}
+.palette-chip[data-value="grey"] .chip-sample {
+  background: linear-gradient(to right, rgb(90, 88, 85), rgb(170, 168, 165));
+}
+.palette-chip[data-value="white"] .chip-sample {
+  background: linear-gradient(to right, rgb(200, 198, 195), rgb(235, 233, 230));
+}
+.palette-chip[data-value="red"] .chip-sample {
+  background: linear-gradient(to right, rgb(90, 38, 18), rgb(165, 80, 42));
+}
+.palette-chip[data-value="mixed"] .chip-sample {
+  background: linear-gradient(
+    to right,
+    rgb(10, 6, 4) 0%,
+    rgb(95, 65, 38) 22%,
+    rgb(210, 180, 130) 45%,
+    rgb(165, 80, 42) 68%,
+    rgb(170, 168, 165) 90%
+  );
 }
 
-.chip-label { line-height: 1; font-weight: 500; }
+.chip-label {
+  line-height: 1;
+  font-weight: 500;
+}
 
 /* Wild density tiers — same shape, slightly different idle tint so the joke reads. */
 .chip.wild {
@@ -267,7 +372,9 @@ legend {
   background: var(--wild-bg);
   border-color: var(--wild-line);
 }
-.chip.wild:hover { border-color: var(--wild-line-hover); }
+.chip.wild:hover {
+  border-color: var(--wild-line-hover);
+}
 .chip.wild.selected {
   background: #6c4a3a;
   color: #fff;
@@ -305,21 +412,37 @@ legend {
   color: var(--accent-ink);
   font: 600 16px/1 inherit;
   cursor: pointer;
-  transition: opacity 140ms ease, transform 80ms ease, box-shadow 200ms ease;
+  transition:
+    opacity 140ms ease,
+    transform 80ms ease,
+    box-shadow 200ms ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
-.primary:disabled { opacity: 0.35; cursor: not-allowed; }
+.primary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 .primary:not(:disabled):hover {
   opacity: 0.94;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
 }
-.primary:not(:disabled):active { transform: translateY(1px); }
-.primary:not(:disabled) { animation: arm 0.4s ease-out; }
+.primary:not(:disabled):active {
+  transform: translateY(1px);
+}
+.primary:not(:disabled) {
+  animation: arm 0.4s ease-out;
+}
 @keyframes arm {
-  0%   { transform: scale(0.985); }
-  60%  { transform: scale(1.008); }
-  100% { transform: scale(1); }
+  0% {
+    transform: scale(0.985);
+  }
+  60% {
+    transform: scale(1.008);
+  }
+  100% {
+    transform: scale(1);
+  }
 }
 
 /* Status */
@@ -332,7 +455,10 @@ legend {
   font-size: 14px;
 }
 
-.status.error { border-color: var(--error); color: var(--error); }
+.status.error {
+  border-color: var(--error);
+  color: var(--error);
+}
 /* Subtle "running here" tag that follows the working message. Lives in a
    span so the parent ::after spinner doesn't collide with it. */
 .status-runtime {
@@ -349,7 +475,8 @@ legend {
 .status.working::after {
   content: "";
   display: inline-block;
-  width: 10px; height: 10px;
+  width: 10px;
+  height: 10px;
   margin-left: 8px;
   border: 2px solid currentColor;
   border-right-color: transparent;
@@ -358,7 +485,11 @@ legend {
   animation: spin 0.7s linear infinite;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 
 /* Result block (seed + preview + zip summary) */
 .result {
@@ -371,8 +502,14 @@ legend {
 }
 
 @keyframes result-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .result-meta {
@@ -397,11 +534,20 @@ legend {
   font-size: 13px;
   cursor: pointer;
   user-select: all;
-  transition: background 200ms ease, color 200ms ease;
+  transition:
+    background 200ms ease,
+    color 200ms ease;
 }
-.result-meta code[title]:hover { background: var(--panel-soft-hover); }
-.result-meta code.copied { background: var(--accent); color: var(--accent-ink); }
-.result-meta code.copied::after { content: " ✓"; }
+.result-meta code[title]:hover {
+  background: var(--panel-soft-hover);
+}
+.result-meta code.copied {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.result-meta code.copied::after {
+  content: " ✓";
+}
 
 .ghost {
   margin-left: auto;
@@ -415,9 +561,16 @@ legend {
   cursor: pointer;
   transition: background 120ms ease;
 }
-.ghost + .ghost { margin-left: 6px; }
-.ghost:hover { background: var(--panel-soft); }
-.ghost:disabled { opacity: 0.5; cursor: not-allowed; }
+.ghost + .ghost {
+  margin-left: 6px;
+}
+.ghost:hover {
+  background: var(--panel-soft);
+}
+.ghost:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .zip-summary {
   margin-top: 10px;
@@ -426,7 +579,9 @@ legend {
   border-radius: 8px;
   font-size: 14px;
 }
-.zip-summary strong { color: var(--ink); }
+.zip-summary strong {
+  color: var(--ink);
+}
 
 /* Stats — collapsed details panel for users who want to see the breakdown. */
 .stats {
@@ -443,21 +598,27 @@ legend {
   align-items: center;
   gap: 6px;
 }
-.stats summary::-webkit-details-marker { display: none; }
+.stats summary::-webkit-details-marker {
+  display: none;
+}
 .stats summary::before {
   content: "▸";
   display: inline-block;
   font-size: 10px;
   transition: transform 140ms ease;
 }
-.stats[open] summary::before { transform: rotate(90deg); }
+.stats[open] summary::before {
+  transform: rotate(90deg);
+}
 .stats p {
   margin: 6px 0 0;
   padding-left: 18px;
   line-height: 1.55;
   color: var(--ink);
 }
-.stats-line { display: block; }
+.stats-line {
+  display: block;
+}
 
 /* Compare — hold-to-peek button. While held, the preview swaps to the
    original (un-haired) image; release to flip back. Subtle "active" state
@@ -475,13 +636,21 @@ legend {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 80ms ease;
 }
 /* The [hidden] attribute alone is too weak to win against `.compare`'s
    explicit display: block. Without this rule the button stayed visible for
    pptx/zip/PDF outputs even though the JS set hidden=true. */
-.compare[hidden] { display: none; }
-.compare:hover { border-color: var(--line-strong); background: var(--drop-hover-bg); }
+.compare[hidden] {
+  display: none;
+}
+.compare:hover {
+  border-color: var(--line-strong);
+  background: var(--drop-hover-bg);
+}
 .compare.peeking,
 .compare:active {
   background: var(--panel-soft);
@@ -503,15 +672,23 @@ legend {
   color: var(--accent-ink);
   font: 600 15px/1 inherit;
   cursor: pointer;
-  transition: opacity 140ms ease, transform 80ms ease, box-shadow 200ms ease;
+  transition:
+    opacity 140ms ease,
+    transform 80ms ease,
+    box-shadow 200ms ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
-.download:disabled { opacity: 0.35; cursor: not-allowed; }
+.download:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
 .download:not(:disabled):hover {
   opacity: 0.94;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
 }
-.download:not(:disabled):active { transform: translateY(1px); }
+.download:not(:disabled):active {
+  transform: translateY(1px);
+}
 
 /* Preview */
 .preview {
@@ -526,7 +703,9 @@ legend {
   cursor: zoom-in;
   transition: opacity 140ms ease;
 }
-.preview img:hover { opacity: 0.94; }
+.preview img:hover {
+  opacity: 0.94;
+}
 
 /* Lightbox — fullscreen image viewer with wheel-zoom and drag-pan. */
 .lightbox {
@@ -543,10 +722,16 @@ legend {
 /* The [hidden] attribute alone is too weak to win against `.lightbox`'s
    explicit display: flex. Explicit attribute selector restores the
    "I am hidden" default. */
-.lightbox[hidden] { display: none; }
+.lightbox[hidden] {
+  display: none;
+}
 @keyframes lightbox-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .lightbox img {
   max-width: 96vw;
@@ -557,7 +742,9 @@ legend {
   -webkit-user-drag: none;
   will-change: transform;
 }
-.lightbox img:active { cursor: grabbing; }
+.lightbox img:active {
+  cursor: grabbing;
+}
 .lightbox-close {
   position: absolute;
   top: 14px;
@@ -573,10 +760,16 @@ legend {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 140ms ease, transform 80ms ease;
+  transition:
+    background 140ms ease,
+    transform 80ms ease;
 }
-.lightbox-close:hover { background: rgba(255, 255, 255, 0.18); }
-.lightbox-close:active { transform: scale(0.96); }
+.lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+.lightbox-close:active {
+  transform: scale(0.96);
+}
 .lightbox-hint {
   position: absolute;
   bottom: 18px;
@@ -592,7 +785,11 @@ legend {
   padding: 1px 5px;
   border: 1px solid rgba(255, 255, 255, 0.25);
   border-radius: 3px;
-  font: 500 11px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    500 11px/1.3 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
 }
 
 /* Settings gear button — top-right of the content column.
@@ -618,11 +815,23 @@ legend {
   cursor: pointer;
   box-shadow: var(--shadow);
   z-index: 100;
-  transition: color 120ms ease, transform 240ms ease, border-color 120ms ease;
+  transition:
+    color 120ms ease,
+    transform 240ms ease,
+    border-color 120ms ease;
 }
-.settings-btn:hover { color: var(--ink); border-color: var(--line-strong); }
-.settings-btn:hover svg { transform: rotate(45deg); }
-.settings-btn svg { width: 18px; height: 18px; transition: transform 240ms ease; }
+.settings-btn:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
+.settings-btn:hover svg {
+  transform: rotate(45deg);
+}
+.settings-btn svg {
+  width: 18px;
+  height: 18px;
+  transition: transform 240ms ease;
+}
 
 /* Settings modal — native <dialog> */
 .settings-modal {
@@ -638,9 +847,22 @@ legend {
   background: rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(2px);
 }
-.settings-form { display: flex; flex-direction: column; gap: 18px; padding: 18px 20px 16px; }
-.settings-header { display: flex; align-items: center; justify-content: space-between; }
-.settings-header h2 { margin: 0; font-size: 18px; letter-spacing: -0.01em; }
+.settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 18px 20px 16px;
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.settings-header h2 {
+  margin: 0;
+  font-size: 18px;
+  letter-spacing: -0.01em;
+}
 .settings-close {
   background: transparent;
   border: 0;
@@ -651,11 +873,27 @@ legend {
   padding: 4px 8px;
   border-radius: 6px;
 }
-.settings-close:hover { background: var(--panel-soft); color: var(--ink); }
+.settings-close:hover {
+  background: var(--panel-soft);
+  color: var(--ink);
+}
 
-.settings-group { border: 0; padding: 0; margin: 0; }
-.settings-group legend { padding: 0 0 8px; font-size: 13px; color: var(--ink-soft); font-weight: 500; }
-.settings-group .row { display: flex; flex-wrap: wrap; gap: 8px; }
+.settings-group {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.settings-group legend {
+  padding: 0 0 8px;
+  font-size: 13px;
+  color: var(--ink-soft);
+  font-weight: 500;
+}
+.settings-group .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 .settings-radio,
 .settings-check {
@@ -671,9 +909,15 @@ legend {
   user-select: none;
 }
 .settings-radio:hover,
-.settings-check:hover { border-color: var(--line-strong); }
+.settings-check:hover {
+  border-color: var(--line-strong);
+}
 .settings-radio input,
-.settings-check input { margin: 0; cursor: pointer; accent-color: var(--accent); }
+.settings-check input {
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--accent);
+}
 .settings-radio:has(input:checked) {
   background: var(--selected);
   color: var(--accent-ink);
@@ -694,7 +938,10 @@ legend {
   padding: 0;
   list-style: none;
 }
-.settings-actions .primary { padding: 8px 18px; font-size: 14px; }
+.settings-actions .primary {
+  padding: 8px 18px;
+  font-size: 14px;
+}
 
 /* Footer */
 footer {
@@ -705,7 +952,10 @@ footer {
   font-size: 13px;
 }
 
-.privacy { margin: 0; line-height: 1.6; }
+.privacy {
+  margin: 0;
+  line-height: 1.6;
+}
 .privacy kbd {
   display: inline-block;
   padding: 1px 6px;
@@ -714,11 +964,19 @@ footer {
   border: 1px solid var(--line);
   border-bottom-width: 2px;
   border-radius: 4px;
-  font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font:
+    500 11px/1.4 ui-monospace,
+    SFMono-Regular,
+    Menlo,
+    monospace;
   color: var(--ink);
 }
 
 @media (max-width: 480px) {
-  .wrap { padding: 28px 16px 48px; }
-  header h1 { font-size: 32px; }
+  .wrap {
+    padding: 28px 16px 48px;
+  }
+  header h1 {
+    font-size: 32px;
+  }
 }

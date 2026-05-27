@@ -18,31 +18,49 @@
 // to whichever onStatus handler is currently registered.
 
 const PYODIDE_VERSION = "0.29.4";
-const PYODIDE_INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
-
-// Bring loadPyodide() into the worker global scope. Pyodide's pyodide.js is
-// designed to be importScripts-loaded from a classic worker.
-importScripts(PYODIDE_INDEX_URL + "pyodide.js");
+const CDN_INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VERSION}/full/`;
+// Same-origin copy vendored by scripts/fetch_pyodide.py (run at Docker build).
+// When present we boot from here — faster, immutable-cacheable, no third-party
+// dependency. When absent (e.g. plain local `uvicorn`), we fall back to the CDN.
+const LOCAL_INDEX_URL = "/pyodide/";
 
 let _pyodide = null;
 let _bootPromise = null;
+// Pyodide packages already loaded into the interpreter, so repeated runs don't
+// re-resolve them. Pillow is loaded at boot; the rest come in on demand.
+const _loaded = new Set();
+let _pptxInstalled = false;
 
 function status(msg) {
   self.postMessage({ type: "status", msg });
 }
 
+/** Prefer the vendored copy; fall back to the CDN if it isn't there. */
+async function resolveIndexUrl() {
+  try {
+    const r = await fetch(LOCAL_INDEX_URL + "pyodide.js", { method: "HEAD" });
+    if (r.ok) return LOCAL_INDEX_URL;
+  } catch {
+    /* not vendored — use the CDN */
+  }
+  return CDN_INDEX_URL;
+}
+
 async function boot() {
+  const indexURL = await resolveIndexUrl();
+
   status("Loading engine (one-time ~10 MB)…");
-  const py = await self.loadPyodide({ indexURL: PYODIDE_INDEX_URL });
+  // importScripts is synchronous; calling it here (rather than at top level)
+  // lets us pick the index URL first. Afterwards self.loadPyodide exists.
+  self.importScripts(indexURL + "pyodide.js");
+  const py = await self.loadPyodide({ indexURL });
 
-  status("Loading image libraries…");
-  await py.loadPackage(["Pillow", "pymupdf", "lxml", "micropip"]);
-
-  status("Installing python-pptx…");
-  await py.runPythonAsync(`
-import micropip
-await micropip.install("python-pptx")
-`);
+  // Pillow is the only package core.py imports at module load, so it's all we
+  // need to render hair on images. pymupdf (PDF) and python-pptx (pptx) are
+  // imported lazily inside core.py and loaded on demand in ensureExtras().
+  status("Loading image library…");
+  await py.loadPackage(["Pillow"]);
+  _loaded.add("pillow");
 
   status("Fetching renderer…");
   const [coreSrc, engineSrc] = await Promise.all([
@@ -71,16 +89,63 @@ async function ensureBooted() {
   return _bootPromise;
 }
 
+const _extOf = (name) => {
+  const n = (name || "").toLowerCase();
+  const i = n.lastIndexOf(".");
+  return i < 0 ? "" : n.slice(i);
+};
+
+/** Decide which heavy libraries this batch needs from the filenames. A .zip is
+ *  opaque (we'd have to unpack it to know), so we conservatively load both. */
+function neededLibs(files) {
+  const exts = new Set((files || []).map((f) => _extOf(f.name)));
+  const opaque = exts.has(".zip");
+  return { pdf: opaque || exts.has(".pdf"), pptx: opaque || exts.has(".pptx") };
+}
+
+/** Load only the packages this run requires, skipping anything already loaded. */
+async function ensureExtras(py, files) {
+  const need = neededLibs(files);
+
+  const toLoad = [];
+  if (need.pdf && !_loaded.has("pymupdf")) toLoad.push("pymupdf");
+  if (need.pptx && !_loaded.has("micropip")) toLoad.push("micropip");
+  if (need.pptx && !_loaded.has("lxml")) toLoad.push("lxml");
+  if (toLoad.length) {
+    status("Loading document libraries…");
+    await py.loadPackage(toLoad);
+    for (const p of toLoad) _loaded.add(p);
+  }
+
+  // python-pptx isn't a Pyodide package; micropip pulls it (and its pure-Python
+  // deps) from PyPI the first time a .pptx shows up.
+  if (need.pptx && !_pptxInstalled) {
+    status("Installing python-pptx…");
+    await py.runPythonAsync(`
+import micropip
+await micropip.install("python-pptx")
+`);
+    _pptxInstalled = true;
+  }
+}
+
 async function handleRun(payload) {
   const py = await ensureBooted();
+  await ensureExtras(py, payload.files);
   status("Adding hair");
 
   // Pyodide's toPy() leaves nested JS `null` as `JsNull` (not Python None),
   // which breaks `is None` checks downstream. Simplest workaround: only
   // include keys whose values are present, and let Python `.get()` supply None.
-  const argsObj = { items: payload.files, palette: payload.palette, intensity: payload.intensity };
-  if (payload.seed !== null && payload.seed !== undefined) argsObj.seed = payload.seed;
-  if (payload.nameSuffix !== null && payload.nameSuffix !== undefined) argsObj.name_suffix = payload.nameSuffix;
+  const argsObj = {
+    items: payload.files,
+    palette: payload.palette,
+    intensity: payload.intensity,
+  };
+  if (payload.seed !== null && payload.seed !== undefined)
+    argsObj.seed = payload.seed;
+  if (payload.nameSuffix !== null && payload.nameSuffix !== undefined)
+    argsObj.name_suffix = payload.nameSuffix;
 
   const argsProxy = py.toPy(argsObj);
   py.globals.set("_args", argsProxy);
@@ -119,8 +184,10 @@ _result
 async function handleSample(payload) {
   const py = await ensureBooted();
   const obj = { palette: payload.palette };
-  if (payload.morphology !== null && payload.morphology !== undefined) obj.morphology = payload.morphology;
-  if (payload.seed !== null && payload.seed !== undefined) obj.seed = payload.seed;
+  if (payload.morphology !== null && payload.morphology !== undefined)
+    obj.morphology = payload.morphology;
+  if (payload.seed !== null && payload.seed !== undefined)
+    obj.seed = payload.seed;
   const proxy = py.toPy(obj);
   py.globals.set("_sample_args", proxy);
   const result = await py.runPythonAsync(`
@@ -148,13 +215,18 @@ self.onmessage = async (e) => {
       // megabytes of result bytes back across the worker boundary.
       const transfer = [];
       if (result?.out_bytes?.buffer) transfer.push(result.out_bytes.buffer);
-      if (result?.preview_before?.buffer) transfer.push(result.preview_before.buffer);
-      if (result?.preview_after?.buffer) transfer.push(result.preview_after.buffer);
+      if (result?.preview_before?.buffer)
+        transfer.push(result.preview_before.buffer);
+      if (result?.preview_after?.buffer)
+        transfer.push(result.preview_after.buffer);
       self.postMessage({ id, ok: true, result }, transfer);
       return;
     } else if (op === "sample") {
       result = await handleSample(payload);
-      self.postMessage({ id, ok: true, result }, result?.buffer ? [result.buffer] : []);
+      self.postMessage(
+        { id, ok: true, result },
+        result?.buffer ? [result.buffer] : [],
+      );
       return;
     } else {
       throw new Error(`Unknown op: ${op}`);

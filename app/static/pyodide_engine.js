@@ -30,7 +30,11 @@ function ensureWorker() {
       // answer without having to await prefetch().
       if (data.msg === "Ready") _isReady = true;
       for (const h of _statusHandlers) {
-        try { h(data.msg); } catch { /* don't let a bad handler kill others */ }
+        try {
+          h(data.msg);
+        } catch {
+          /* don't let a bad handler kill others */
+        }
       }
       return;
     }
@@ -87,7 +91,14 @@ export function isReady() {
  * @param {(msg: string) => void} [args.onStatus]
  * @returns {Promise<{bytes: Uint8Array, name: string, contentType: string, seed: number, stats: object|null, haired: number|null, skipped: number|null, errored: number|null}>}
  */
-export async function run({ files, palette, intensity, seed = null, nameSuffix = null, onStatus = () => {} }) {
+export async function run({
+  files,
+  palette,
+  intensity,
+  seed = null,
+  nameSuffix = null,
+  onStatus = () => {},
+}) {
   _statusHandlers.add(onStatus);
   try {
     // Normalise to Uint8Array so the worker receives a consistent shape.
@@ -95,7 +106,13 @@ export async function run({ files, palette, intensity, seed = null, nameSuffix =
       name: f.name,
       bytes: f.bytes instanceof Uint8Array ? f.bytes : new Uint8Array(f.bytes),
     }));
-    const result = await call("run", { files: items, palette, intensity, seed, nameSuffix });
+    const result = await call("run", {
+      files: items,
+      palette,
+      intensity,
+      seed,
+      nameSuffix,
+    });
     if (!result || !result.ok) {
       const err = new Error(result?.error || "Engine error");
       if (result?.code != null) err.code = result.code;

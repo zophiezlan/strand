@@ -15,3 +15,7 @@ venv/
 .claude/settings.local.json
 .claude/launch.json
 scratch/
+
+# Vendored Pyodide runtime — fetched by scripts/fetch_pyodide.py at build time,
+# not committed. ~32 MB of version-pinned runtime + wheels.
+app/static/pyodide/

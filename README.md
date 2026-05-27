@@ -57,9 +57,16 @@ Supported file types: PNG, JPG, JPEG, GIF, BMP, WEBP, PDF, PPTX, ZIP.
 ## Privacy
 
 The web page runs Strand entirely in your browser by default. On first
-upload it lazy-loads Pyodide (~10 MB, then cached) and runs the same
-`app/core.py` rendering engine the CLI uses, locally. Your file is read,
-processed, and previewed inside the page — nothing is uploaded.
+upload it lazy-loads Pyodide and runs the same `app/core.py` rendering engine
+the CLI uses, locally. Your file is read, processed, and previewed inside the
+page — nothing is uploaded.
+
+The engine only downloads what the dropped file needs: the runtime plus Pillow
+(~13 MB) for images, adding PyMuPDF (~17 MB) only when you strand a PDF, and
+python-pptx only for `.pptx`. In production these are served from the app's own
+origin (vendored at build time by `scripts/fetch_pyodide.py`, cached
+immutably); in plain local dev the worker falls back to the jsdelivr CDN. Once
+fetched, the browser caches them, so subsequent uploads start instantly.
 
 The "process on server instead" toggle is the explicit opt-in. When ticked,
 the file is POSTed to the same FastAPI service the project has always
@@ -86,6 +93,15 @@ uvicorn app.main:app --reload
 The server hosts the static page (which boots Pyodide on first drop) and
 also handles the `/strand` POST route used by the server-mode toggle and
 the public API.
+
+In local dev the in-browser engine boots from the jsdelivr CDN. To exercise
+the production path (engine served from this origin), vendor the runtime first:
+
+```bash
+python scripts/fetch_pyodide.py   # writes app/static/pyodide/ (~32 MB, gitignored)
+```
+
+The Docker build runs this automatically; the directory is never committed.
 
 ## CLI
 
@@ -277,8 +293,12 @@ app/
 └─ static/
    ├─ index.html
    ├─ app.js               # UI, dispatches to engine or server based on toggle
-   ├─ pyodide_engine.js    # lazy Pyodide boot, runs app/core.py in-browser
+   ├─ pyodide_engine.js    # main-thread RPC shim over the worker
+   ├─ pyodide_worker.js    # boots Pyodide in a Worker, lazy-loads libs per file type
+   ├─ pyodide/             # vendored runtime + wheels (build-time, gitignored)
    └─ style.css
+scripts/
+└─ fetch_pyodide.py # vendors the Pyodide runtime + wheels into app/static/pyodide/
 tests/
 ├─ test_inject.py   # Core + HTTP roundtrips
 └─ test_cli.py      # CLI subcommands end-to-end

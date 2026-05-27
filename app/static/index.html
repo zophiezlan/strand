@@ -1,201 +1,433 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Strand - put a hair on it</title>
-  <meta name="description" content="A novelty filter that puts a hair on your images, PDFs, and slide decks. In-memory only — your files aren't stored or logged." />
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Strand - put a hair on it</title>
+    <meta
+      name="description"
+      content="A novelty filter that puts a hair on your images, PDFs, and slide decks. In-memory only — your files aren't stored or logged."
+    />
 
-  <!-- Favicon: inline SVG of a single strand. -->
-  <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M 4 36 C 18 12, 32 56, 60 24' stroke='%231a1a1a' stroke-width='3' fill='none' stroke-linecap='round'/></svg>" />
+    <!-- Favicon: inline SVG of a single strand. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path d='M 4 36 C 18 12, 32 56, 60 24' stroke='%231a1a1a' stroke-width='3' fill='none' stroke-linecap='round'/></svg>"
+    />
 
-  <!-- Open Graph / Twitter -->
-  <meta property="og:title" content="Strand - put a hair on it" />
-  <meta property="og:description" content="A novelty filter that puts a hair on your images, PDFs, and slide decks." />
-  <meta property="og:type" content="website" />
-  <meta name="twitter:card" content="summary" />
+    <!-- Open Graph / Twitter -->
+    <meta property="og:title" content="Strand - put a hair on it" />
+    <meta
+      property="og:description"
+      content="A novelty filter that puts a hair on your images, PDFs, and slide decks."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
 
-  <link rel="stylesheet" href="style.css" />
-  <script>
-    // Apply persisted theme before the page paints to avoid a light→dark flash.
-    (function () {
-      const t = localStorage.getItem("strand-theme") || "system";
-      const dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-      document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-    })();
-  </script>
-</head>
-<body>
-  <button id="settings-btn" class="settings-btn" type="button" aria-label="Settings" title="Settings">
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <path fill="currentColor" d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a7.03 7.03 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 13.5 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.6.24-1.17.57-1.69.98l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98L1.96 14.63a.5.5 0 0 0-.12.64l2 3.46c.14.24.43.34.68.22l2.49-1c.52.4 1.09.74 1.69.98l.38 2.65c.04.24.26.42.5.42h4c.24 0 .46-.18.5-.42l.38-2.65c.6-.24 1.17-.57 1.69-.98l2.49 1c.25.1.54 0 .68-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z" />
-    </svg>
-  </button>
+    <link rel="stylesheet" href="style.css" />
+    <script>
+      // Apply persisted theme before the page paints to avoid a light→dark flash.
+      (function () {
+        const t = localStorage.getItem("strand-theme") || "system";
+        const dark =
+          t === "dark" ||
+          (t === "system" &&
+            matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.setAttribute(
+          "data-theme",
+          dark ? "dark" : "light",
+        );
+      })();
+    </script>
+  </head>
+  <body>
+    <button
+      id="settings-btn"
+      class="settings-btn"
+      type="button"
+      aria-label="Settings"
+      title="Settings"
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path
+          fill="currentColor"
+          d="M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.07-.98l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a7.03 7.03 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 13.5 2h-4a.5.5 0 0 0-.5.42l-.38 2.65c-.6.24-1.17.57-1.69.98l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98L1.96 14.63a.5.5 0 0 0-.12.64l2 3.46c.14.24.43.34.68.22l2.49-1c.52.4 1.09.74 1.69.98l.38 2.65c.04.24.26.42.5.42h4c.24 0 .46-.18.5-.42l.38-2.65c.6-.24 1.17-.57 1.69-.98l2.49 1c.25.1.54 0 .68-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"
+        />
+      </svg>
+    </button>
 
-  <main class="wrap">
-    <header>
-      <h1>Strand</h1>
-      <p class="tag">Drop a file. We'll put a hair on it. (Or twenty, if you ask.)</p>
-    </header>
+    <main class="wrap">
+      <header>
+        <h1>Strand</h1>
+        <p class="tag">
+          Drop a file. We'll put a hair on it. (Or twenty, if you ask.)
+        </p>
+      </header>
 
-    <section id="drop" class="drop">
-      <input type="file" id="file" accept=".png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.pptx,.zip" multiple hidden />
-      <input type="file" id="folder" webkitdirectory directory multiple hidden />
-      <div class="drop-inner">
-        <svg class="drop-glyph" viewBox="0 0 120 40" aria-hidden="true">
-          <path d="M 4 28 C 22 4, 38 36, 60 18 S 96 4, 116 24"
-                fill="none" stroke="currentColor" stroke-width="2.4"
-                stroke-linecap="round" />
-        </svg>
-        <div class="drop-text">
-          <strong>Drop files here</strong>
-          <span>or click to browse · paste an image · <a href="#" id="pick-folder">pick a folder</a></span>
+      <section id="drop" class="drop">
+        <input
+          type="file"
+          id="file"
+          accept=".png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.pptx,.zip"
+          multiple
+          hidden
+        />
+        <input
+          type="file"
+          id="folder"
+          webkitdirectory
+          directory
+          multiple
+          hidden
+        />
+        <div class="drop-inner">
+          <svg class="drop-glyph" viewBox="0 0 120 40" aria-hidden="true">
+            <path
+              d="M 4 28 C 22 4, 38 36, 60 18 S 96 4, 116 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.4"
+              stroke-linecap="round"
+            />
+          </svg>
+          <div class="drop-text">
+            <strong>Drop files here</strong>
+            <span
+              >or click to browse · paste an image ·
+              <a href="#" id="pick-folder">pick a folder</a></span
+            >
+          </div>
+          <div class="drop-meta">
+            Images, PDFs, slide decks, or a zip &nbsp;·&nbsp; up to 25 MB
+            &nbsp;·&nbsp; drop multiple to get a zip back
+          </div>
         </div>
-        <div class="drop-meta">Images, PDFs, slide decks, or a zip &nbsp;·&nbsp; up to 25 MB &nbsp;·&nbsp; drop multiple to get a zip back</div>
-      </div>
-      <!-- One stray hair on the drop zone — the cleanest version of the joke.
+        <!-- One stray hair on the drop zone — the cleanest version of the joke.
            A different hair every page load, fetched from /api/sample which
            runs the same hair generator the tool uses, seeded by the same
            Python RNG. pointer-events:none so it can never block a drop. -->
-      <img class="drop-strand" alt="" aria-hidden="true" />
-    </section>
-    <script>
-      // Pick one shed hair to land on the drop zone. Seed and palette are
-      // random per page load; the server renders the actual hair via the
-      // same `generate_hair` that the file-processing pipeline uses, so
-      // what you see here is literally one frame of what the tool ships.
-      (function () {
-        const rand = (a, b) => a + Math.random() * (b - a);
-        // Locked to the white palette — the app's own subtle/default look
-        // (classic photocopier-glass artefact). Seed still varies per load
-        // so the morphology, curve, and follicle land differently each time.
-        const seed = (Math.random() * 0x7fffffff) | 0;
+        <img class="drop-strand" alt="" aria-hidden="true" />
+      </section>
+      <script>
+        // Pick one shed hair to land on the drop zone. Seed and palette are
+        // random per page load; the server renders the actual hair via the
+        // same `generate_hair` that the file-processing pipeline uses, so
+        // what you see here is literally one frame of what the tool ships.
+        (function () {
+          const rand = (a, b) => a + Math.random() * (b - a);
+          // Locked to the white palette — the app's own subtle/default look
+          // (classic photocopier-glass artefact). Seed still varies per load
+          // so the morphology, curve, and follicle land differently each time.
+          const seed = (Math.random() * 0x7fffffff) | 0;
 
-        const img = document.querySelector(".drop-strand");
-        if (!img) return;
+          const img = document.querySelector(".drop-strand");
+          if (!img) return;
 
-        img.addEventListener("load", () => {
-          // Position is picked *after* the PNG loads so we know its actual
-          // size and can keep the whole hair inside the drop zone, with a
-          // small inset so it never touches the dashed border.
-          const drop = document.getElementById("drop");
-          const dropRect = drop.getBoundingClientRect();
-          // CSS caps the rendered width; height stays proportional.
-          const rendered = img.getBoundingClientRect();
-          const inset = 10;
-          const maxLeft = Math.max(inset, dropRect.width - rendered.width - inset);
-          const maxTop  = Math.max(inset, dropRect.height - rendered.height - inset);
-          img.style.left = Math.round(rand(inset, maxLeft)) + "px";
-          img.style.top  = Math.round(rand(inset, maxTop))  + "px";
-          img.style.transform = "rotate(" + Math.round(rand(-25, 25)) + "deg)";
-          img.classList.add("ready");
-        });
+          img.addEventListener("load", () => {
+            // Position is picked *after* the PNG loads so we know its actual
+            // size and can keep the whole hair inside the drop zone, with a
+            // small inset so it never touches the dashed border.
+            const drop = document.getElementById("drop");
+            const dropRect = drop.getBoundingClientRect();
+            // CSS caps the rendered width; height stays proportional.
+            const rendered = img.getBoundingClientRect();
+            const inset = 10;
+            const maxLeft = Math.max(
+              inset,
+              dropRect.width - rendered.width - inset,
+            );
+            const maxTop = Math.max(
+              inset,
+              dropRect.height - rendered.height - inset,
+            );
+            img.style.left = Math.round(rand(inset, maxLeft)) + "px";
+            img.style.top = Math.round(rand(inset, maxTop)) + "px";
+            img.style.transform =
+              "rotate(" + Math.round(rand(-25, 25)) + "deg)";
+            img.classList.add("ready");
+          });
 
-        img.src = "/api/sample?seed=" + seed + "&palette=white";
-      })();
-    </script>
+          img.src = "/api/sample?seed=" + seed + "&palette=white";
+        })();
+      </script>
 
-    <section class="controls" aria-label="Options">
-      <fieldset>
-        <legend>Hair colour</legend>
-        <div class="row palette-row" role="radiogroup" id="palette">
-          <button type="button" class="chip palette-chip" data-value="dark" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Dark</span></button>
-          <button type="button" class="chip palette-chip" data-value="brown" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Brown</span></button>
-          <button type="button" class="chip palette-chip" data-value="blonde" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Blonde</span></button>
-          <button type="button" class="chip palette-chip" data-value="red" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Red</span></button>
-          <button type="button" class="chip palette-chip" data-value="grey" role="radio" aria-checked="false"><span class="chip-sample"></span><span class="chip-label">Grey</span></button>
-          <button type="button" class="chip palette-chip selected" data-value="white" role="radio" aria-checked="true"><span class="chip-sample"></span><span class="chip-label">White</span></button>
-          <button type="button" class="chip palette-chip" data-value="mixed" role="radio" aria-checked="false"><span class="chip-sample chip-sample--mixed"></span><span class="chip-label">Mixed</span></button>
+      <section class="controls" aria-label="Options">
+        <fieldset>
+          <legend>Hair colour</legend>
+          <div class="row palette-row" role="radiogroup" id="palette">
+            <button
+              type="button"
+              class="chip palette-chip"
+              data-value="dark"
+              role="radio"
+              aria-checked="false"
+            >
+              <span class="chip-sample"></span
+              ><span class="chip-label">Dark</span>
+            </button>
+            <button
+              type="button"
+              class="chip palette-chip"
+              data-value="brown"
+              role="radio"
+              aria-checked="false"
+            >
+              <span class="chip-sample"></span
+              ><span class="chip-label">Brown</span>
+            </button>
+            <button
+              type="button"
+              class="chip palette-chip"
+              data-value="blonde"
+              role="radio"
+              aria-checked="false"
+            >
+              <span class="chip-sample"></span
+              ><span class="chip-label">Blonde</span>
+            </button>
+            <button
+              type="button"
+              class="chip palette-chip"
+              data-value="red"
+              role="radio"
+              aria-checked="false"
+            >
+              <span class="chip-sample"></span
+              ><span class="chip-label">Red</span>
+            </button>
+            <button
+              type="button"
+              class="chip palette-chip"
+              data-value="grey"
+              role="radio"
+              aria-checked="false"
+            >
+              <span class="chip-sample"></span
+              ><span class="chip-label">Grey</span>
+            </button>
+            <button
+              type="button"
+              class="chip palette-chip selected"
+              data-value="white"
+              role="radio"
+              aria-checked="true"
+            >
+              <span class="chip-sample"></span
+              ><span class="chip-label">White</span>
+            </button>
+            <button
+              type="button"
+              class="chip palette-chip"
+              data-value="mixed"
+              role="radio"
+              aria-checked="false"
+            >
+              <span class="chip-sample chip-sample--mixed"></span
+              ><span class="chip-label">Mixed</span>
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Hair density</legend>
+          <div class="row density" role="radiogroup" id="intensity">
+            <button
+              type="button"
+              class="chip selected"
+              data-value="subtle"
+              role="radio"
+              aria-checked="true"
+            >
+              Subtle
+            </button>
+            <button
+              type="button"
+              class="chip"
+              data-value="normal"
+              role="radio"
+              aria-checked="false"
+            >
+              Normal
+            </button>
+            <button
+              type="button"
+              class="chip"
+              data-value="heavy"
+              role="radio"
+              aria-checked="false"
+            >
+              Heavy
+            </button>
+            <button
+              type="button"
+              class="chip wild"
+              data-value="hirsute"
+              role="radio"
+              aria-checked="false"
+            >
+              Hirsute
+            </button>
+            <button
+              type="button"
+              class="chip wild"
+              data-value="werewolf"
+              role="radio"
+              aria-checked="false"
+            >
+              Werewolf
+            </button>
+            <button
+              type="button"
+              class="chip wild"
+              data-value="cousin-itt"
+              role="radio"
+              aria-checked="false"
+            >
+              Cousin Itt
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Filename</legend>
+          <input
+            type="text"
+            id="suffix"
+            class="text-input"
+            maxlength="32"
+            placeholder="-strand"
+          />
+          <div class="hint">
+            A tag added to your filename so you can tell the new file apart.
+            Leave blank to keep the original name.
+          </div>
+        </fieldset>
+      </section>
+
+      <button id="go" class="primary" disabled>Strand it</button>
+
+      <section id="status" class="status" hidden></section>
+      <section id="result" class="result" hidden>
+        <div class="result-meta">
+          <span class="seed-label">Mix code</span>
+          <code
+            id="seed-value"
+            title="Click to copy. Save it to get the same look later."
+            >—</code
+          >
+          <button
+            type="button"
+            id="reroll-same"
+            class="ghost"
+            title="Re-do it with the same Mix code"
+          >
+            Do that one again
+          </button>
         </div>
-      </fieldset>
-
-      <fieldset>
-        <legend>Hair density</legend>
-        <div class="row density" role="radiogroup" id="intensity">
-          <button type="button" class="chip selected" data-value="subtle" role="radio" aria-checked="true">Subtle</button>
-          <button type="button" class="chip" data-value="normal" role="radio" aria-checked="false">Normal</button>
-          <button type="button" class="chip" data-value="heavy" role="radio" aria-checked="false">Heavy</button>
-          <button type="button" class="chip wild" data-value="hirsute" role="radio" aria-checked="false">Hirsute</button>
-          <button type="button" class="chip wild" data-value="werewolf" role="radio" aria-checked="false">Werewolf</button>
-          <button type="button" class="chip wild" data-value="cousin-itt" role="radio" aria-checked="false">Cousin Itt</button>
+        <div id="zip-summary" class="zip-summary" hidden></div>
+        <div id="preview" class="preview" hidden>
+          <img id="preview-img" alt="Hairified preview" />
         </div>
-      </fieldset>
+        <button
+          type="button"
+          id="compare"
+          class="compare"
+          hidden
+          title="Press and hold to see the original"
+        >
+          Hold to compare
+        </button>
+        <button type="button" id="download" class="download" disabled>
+          Download
+        </button>
+        <details id="stats" class="stats" hidden>
+          <summary>Stats</summary>
+          <p id="stats-line"></p>
+        </details>
+      </section>
 
-      <fieldset>
-        <legend>Filename</legend>
-        <input type="text" id="suffix" class="text-input" maxlength="32" placeholder="-strand" />
-        <div class="hint">A tag added to your filename so you can tell the new file apart. Leave blank to keep the original name.</div>
-      </fieldset>
-    </section>
+      <footer>
+        <p class="privacy">
+          Runs in your browser — your file never leaves the page unless you tick
+          "process on server". Shortcuts: <kbd>Enter</kbd> to go ·
+          <kbd>R</kbd> for another · <kbd>S</kbd> to repeat the last one.
+        </p>
+      </footer>
+    </main>
 
-    <button id="go" class="primary" disabled>Strand it</button>
-
-    <section id="status" class="status" hidden></section>
-    <section id="result" class="result" hidden>
-      <div class="result-meta">
-        <span class="seed-label">Mix code</span>
-        <code id="seed-value" title="Click to copy. Save it to get the same look later.">—</code>
-        <button type="button" id="reroll-same" class="ghost" title="Re-do it with the same Mix code">Do that one again</button>
+    <!-- Fullscreen image viewer. Clicking the result preview opens this. -->
+    <div
+      id="lightbox"
+      class="lightbox"
+      hidden
+      role="dialog"
+      aria-modal="true"
+      aria-label="Full preview"
+    >
+      <img id="lightbox-img" alt="" draggable="false" />
+      <button
+        type="button"
+        id="lightbox-close"
+        class="lightbox-close"
+        aria-label="Close"
+      >
+        ×
+      </button>
+      <div class="lightbox-hint">
+        Scroll to zoom · drag to pan · double-click to reset ·
+        <kbd>Esc</kbd> closes
       </div>
-      <div id="zip-summary" class="zip-summary" hidden></div>
-      <div id="preview" class="preview" hidden>
-        <img id="preview-img" alt="Hairified preview" />
-      </div>
-      <button type="button" id="compare" class="compare" hidden
-              title="Press and hold to see the original">Hold to compare</button>
-      <button type="button" id="download" class="download" disabled>Download</button>
-      <details id="stats" class="stats" hidden>
-        <summary>Stats</summary>
-        <p id="stats-line"></p>
-      </details>
-    </section>
+    </div>
 
-    <footer>
-      <p class="privacy">
-        Runs in your browser — your file never leaves the page unless you tick "process on server".
-        Shortcuts: <kbd>Enter</kbd> to go · <kbd>R</kbd> for another · <kbd>S</kbd> to repeat the last one.
-      </p>
-    </footer>
-  </main>
+    <dialog id="settings-modal" class="settings-modal" aria-label="Settings">
+      <form method="dialog" class="settings-form">
+        <header class="settings-header">
+          <h2>Settings</h2>
+          <button
+            type="submit"
+            value="close"
+            class="settings-close"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </header>
 
-  <!-- Fullscreen image viewer. Clicking the result preview opens this. -->
-  <div id="lightbox" class="lightbox" hidden role="dialog" aria-modal="true" aria-label="Full preview">
-    <img id="lightbox-img" alt="" draggable="false" />
-    <button type="button" id="lightbox-close" class="lightbox-close" aria-label="Close">×</button>
-    <div class="lightbox-hint">Scroll to zoom · drag to pan · double-click to reset · <kbd>Esc</kbd> closes</div>
-  </div>
+        <fieldset class="settings-group">
+          <legend>Theme</legend>
+          <div class="row" id="theme" role="radiogroup">
+            <label class="settings-radio"
+              ><input type="radio" name="theme" value="system" /> Match
+              system</label
+            >
+            <label class="settings-radio"
+              ><input type="radio" name="theme" value="light" /> Light</label
+            >
+            <label class="settings-radio"
+              ><input type="radio" name="theme" value="dark" /> Dark</label
+            >
+          </div>
+        </fieldset>
 
-  <dialog id="settings-modal" class="settings-modal" aria-label="Settings">
-    <form method="dialog" class="settings-form">
-      <header class="settings-header">
-        <h2>Settings</h2>
-        <button type="submit" value="close" class="settings-close" aria-label="Close">×</button>
-      </header>
+        <fieldset class="settings-group">
+          <legend>Processing</legend>
+          <label class="settings-check" for="use-server">
+            <input type="checkbox" id="use-server" />
+            <span>Process on server instead</span>
+          </label>
+          <p class="hint">
+            By default Strand runs entirely in your browser — your file never
+            leaves the page. Tick this to upload it to our server instead (handy
+            if your browser struggles with very large files).
+          </p>
+        </fieldset>
 
-      <fieldset class="settings-group">
-        <legend>Theme</legend>
-        <div class="row" id="theme" role="radiogroup">
-          <label class="settings-radio"><input type="radio" name="theme" value="system" /> Match system</label>
-          <label class="settings-radio"><input type="radio" name="theme" value="light" /> Light</label>
-          <label class="settings-radio"><input type="radio" name="theme" value="dark" /> Dark</label>
-        </div>
-      </fieldset>
+        <menu class="settings-actions">
+          <button type="submit" value="close" class="primary">Done</button>
+        </menu>
+      </form>
+    </dialog>
 
-      <fieldset class="settings-group">
-        <legend>Processing</legend>
-        <label class="settings-check" for="use-server">
-          <input type="checkbox" id="use-server" />
-          <span>Process on server instead</span>
-        </label>
-        <p class="hint">By default Strand runs entirely in your browser — your file never leaves the page. Tick this to upload it to our server instead (handy if your browser struggles with very large files).</p>
-      </fieldset>
-
-      <menu class="settings-actions">
-        <button type="submit" value="close" class="primary">Done</button>
-      </menu>
-    </form>
-  </dialog>
-
-  <script type="module" src="app.js"></script>
-</body>
+    <script type="module" src="app.js"></script>
+  </body>
 </html>

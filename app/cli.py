@@ -211,7 +211,7 @@ def _aggregate_stats(into: dict, src: dict) -> None:
 def _empty_aggregate() -> dict:
     return {
         "hairs": 0,
-        "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0, "pube": 0},
+        "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0, "pube": 0, "ring": 0},
         "palettes": {},
         "pages_touched": 0,
         "clusters": 0,

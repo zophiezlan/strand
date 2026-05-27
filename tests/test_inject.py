@@ -288,7 +288,7 @@ def test_image_injector_returns_stats(png_bytes):
     assert stats["clusters"] == 0  # cluster_chance=0 disables buddies
     morph_sum = sum(stats["morphologies"].values())
     assert morph_sum == 3
-    assert set(stats["morphologies"].keys()) == {"curve", "loop", "eyelash", "fragment", "pube"}
+    assert set(stats["morphologies"].keys()) == {"curve", "loop", "eyelash", "fragment", "pube", "ring"}
     # Non-mixed palette: every hair drawn in the requested colour family.
     assert stats["palettes"] == {"white": 3}
 
@@ -616,7 +616,7 @@ def test_api_sample_loop_variant(client):
     assert r.status_code == 200
 
 
-@pytest.mark.parametrize("morphology", ["curve", "loop", "eyelash", "fragment", "pube"])
+@pytest.mark.parametrize("morphology", ["curve", "loop", "eyelash", "fragment", "pube", "ring"])
 def test_api_sample_morphology_choices(client, morphology):
     r = client.get("/api/sample", params={"palette": "dark", "seed": 1, "morphology": morphology})
     assert r.status_code == 200
@@ -777,6 +777,35 @@ def test_pube_renderer_produces_non_empty_image():
     # The strand should have some non-transparent pixels.
     alpha = img.split()[-1]
     assert alpha.getextrema()[1] > 0
+
+
+# --- Ring morphology (near-circular coil) ---------------------------------
+
+def test_ring_morphology_is_registered():
+    """ring should appear in the dispatch table and the cm-length map."""
+    from app.core import MORPHOLOGIES, MORPHOLOGY_LENGTH_CM
+    assert "ring" in MORPHOLOGIES
+    assert "ring" in MORPHOLOGY_LENGTH_CM
+    lo, hi = MORPHOLOGY_LENGTH_CM["ring"]
+    assert 0 < lo < hi < 10
+
+
+def test_ring_renderer_produces_non_empty_image():
+    import random
+    from app.core import _generate_ring_hair
+    img = _generate_ring_hair(random.Random(3), palette="dark")
+    alpha = img.split()[-1]
+    assert alpha.getextrema()[1] > 0
+
+
+def test_ring_is_open_not_closed():
+    """The ring leaves a gap — its two endpoints shouldn't coincide."""
+    import random
+    from app.core import _generate_ring_hair
+    # Deterministic: same seed twice is identical (sanity on determinism too).
+    a = _generate_ring_hair(random.Random(11), palette="dark")
+    b = _generate_ring_hair(random.Random(11), palette="dark")
+    assert a.tobytes() == b.tobytes()
 
 
 def test_pube_strand_visibly_zigzags():

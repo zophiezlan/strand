@@ -192,12 +192,18 @@ def _generate_curve_hair(rng, palette="dark", base_width=400, base_height=120):
 def _generate_loop_hair(rng, palette="dark", base_width=400, base_height=240):
     img, draw, cw, ch = _new_canvas(base_width, base_height)
 
-    loop_cx = base_width * rng.uniform(0.25, 0.38)
+    loop_cx = base_width * rng.uniform(0.30, 0.40)
     loop_cy = base_height * 0.5
-    loop_r = min(base_width, base_height) * rng.uniform(0.22, 0.32)
+    # A real bent-over hair loops back on itself with a fairly open bend, not a
+    # tight little curl — so the loop radius is generous. The tail is shortened
+    # to match (see tail_len) so a looser loop doesn't make the whole hair longer.
+    loop_r = min(base_width, base_height) * rng.uniform(0.30, 0.42)
 
     theta_close = rng.uniform(-0.35, 0.35)
-    theta_open = theta_close + rng.uniform(0.18, 0.45)
+    # Wider angular gap between the two ends → the two bezier control tangents
+    # diverge more, so the loop balloons into a rounder, more open bend instead
+    # of a tall pinched teardrop.
+    theta_open = theta_close + rng.uniform(0.55, 1.05)
 
     a_local = (loop_cx + loop_r * math.cos(theta_close),
                loop_cy + loop_r * math.sin(theta_close))
@@ -207,8 +213,8 @@ def _generate_loop_hair(rng, palette="dark", base_width=400, base_height=240):
     tan_a = (-math.sin(theta_close), math.cos(theta_close))
     tan_b = (math.sin(theta_open), -math.cos(theta_open))
 
-    # ~1.7r gives a near-circular Bezier loop
-    k = loop_r * 1.7
+    # Bulge factor: larger k pushes the loop out into a fuller, rounder curl.
+    k = loop_r * 2.1
     p1_local = (a_local[0] + k * tan_a[0], a_local[1] + k * tan_a[1])
     p2_local = (b_local[0] + k * tan_b[0], b_local[1] + k * tan_b[1])
 
@@ -228,7 +234,7 @@ def _generate_loop_hair(rng, palette="dark", base_width=400, base_height=240):
     mag = math.hypot(exit_dx, exit_dy) or 1.0
     tail_dir = (exit_dx / mag, exit_dy / mag)
 
-    tail_len = base_width * rng.uniform(0.40, 0.55)
+    tail_len = base_width * rng.uniform(0.25, 0.38)
     t_end_local = (b_local[0] + tail_len * tail_dir[0] + rng.uniform(-15, 15),
                    b_local[1] + tail_len * tail_dir[1] + rng.uniform(-25, 25))
     t_p1_local = (b_local[0] + tail_len * 0.3 * tail_dir[0] + rng.uniform(-10, 10),
@@ -395,6 +401,54 @@ def _generate_fragment_hair(rng: random.Random, palette: str = "dark",
     return _finalize(img, cw, ch)
 
 
+def _generate_ring_hair(rng: random.Random, palette: str = "dark",
+                        base_width: int = 240, base_height: int = 240) -> Image.Image:
+    """A hair curved round into almost a full circle — open, not a closed 'O'.
+
+    Distinct from `loop` (a round bend with a long trailing tail): the ring has
+    no tail, sweeps most of the way around (280-345°) and leaves a gap so it
+    reads as a near-circle. A gentle eccentricity (slight oval) and a slow
+    radius wobble keep it off a sterile perfect circle — "almost circular, but
+    not quite", which is how a shed strand actually settles into a coil.
+    """
+    img, draw, cw, ch = _new_canvas(base_width, base_height)
+
+    cx = base_width * 0.5
+    cy = base_height * 0.5
+    R = min(base_width, base_height) * rng.uniform(0.36, 0.42)
+
+    span = rng.uniform(math.radians(280), math.radians(345))   # leaves a gap
+    start = rng.uniform(0.0, math.tau)
+    ecc = rng.uniform(0.82, 1.0)            # squash one axis → slight oval
+    tilt = rng.uniform(0.0, math.tau)       # orientation of the oval's axis
+    wob_cycles = rng.uniform(1.5, 3.0)      # slow radius wobble around the arc
+    wob_amp = rng.uniform(0.04, 0.10)
+    wob_phase = rng.uniform(0.0, math.tau)
+
+    cos_t, sin_t = math.cos(tilt), math.sin(tilt)
+    n_samples = 240
+    points = []
+    for i in range(n_samples):
+        t = i / (n_samples - 1)
+        ang = start + t * span
+        rr = R * (1.0 + wob_amp * math.sin(t * wob_cycles * math.tau + wob_phase))
+        ox = rr * math.cos(ang)
+        oy = rr * ecc * math.sin(ang)
+        # Rotate the (slightly oval) ring so the squashed axis isn't always vertical.
+        x = ox * cos_t - oy * sin_t
+        y = ox * sin_t + oy * cos_t
+        points.append(_to_canvas(cx + x, cy + y))
+
+    base_color = _random_hair_color(rng, palette)
+    ws = _palette_width_scale(palette)
+    _draw_strand_polyline(draw, points, base_color, rng,
+                          width_start=1.5, width_end=1.2, width_scale=ws)
+    if rng.random() < _FOLLICLE_CHANCE:
+        _draw_follicle(draw, rng.choice([points[0], points[-1]]),
+                       base_color, rng, width_scale=ws)
+    return _finalize(img, cw, ch)
+
+
 # Public dispatch table — used by /api/sample to render a specific morphology
 # and by `generate_hair` for weighted random selection.
 MORPHOLOGIES: dict[str, "callable"] = {
@@ -403,6 +457,7 @@ MORPHOLOGIES: dict[str, "callable"] = {
     "eyelash":  _generate_eyelash_hair,
     "fragment": _generate_fragment_hair,
     "pube":     _generate_pube_hair,
+    "ring":     _generate_ring_hair,
 }
 
 
@@ -416,6 +471,7 @@ MORPHOLOGY_LENGTH_CM: dict[str, tuple[float, float]] = {
     "eyelash":  (0.7, 1.4),
     "fragment": (1.5, 4.0),
     "pube":     (1.5, 4.0),     # pubic / tightly coiled body hair
+    "ring":     (1.5, 4.5),     # head hair settled into a near-circular coil
 }
 
 # Substrate unit conversions per centimetre.
@@ -445,6 +501,7 @@ def generate_hair_with_morphology(
     eyelash_chance: float = 0.08,
     fragment_chance: float = 0.08,
     pube_chance: float = 0.06,
+    ring_chance: float = 0.06,
 ) -> tuple[Image.Image, str, str]:
     """Pick a morphology by weighted random choice; return (image, morphology, palette).
 
@@ -467,6 +524,9 @@ def generate_hair_with_morphology(
     elif r < loop_chance + eyelash_chance + fragment_chance + pube_chance:
         morph = "pube"
         renderer = _generate_pube_hair
+    elif r < loop_chance + eyelash_chance + fragment_chance + pube_chance + ring_chance:
+        morph = "ring"
+        renderer = _generate_ring_hair
     else:
         morph = "curve"
         renderer = _generate_curve_hair
@@ -487,12 +547,14 @@ def generate_hair(
     eyelash_chance: float = 0.08,
     fragment_chance: float = 0.08,
     pube_chance: float = 0.06,
+    ring_chance: float = 0.06,
 ) -> Image.Image:
     """Pick a morphology by weighted random choice; default is the curved strand."""
     img, _, _ = generate_hair_with_morphology(
         rng, palette=palette,
         loop_chance=loop_chance, eyelash_chance=eyelash_chance,
         fragment_chance=fragment_chance, pube_chance=pube_chance,
+        ring_chance=ring_chance,
     )
     return img
 
@@ -509,7 +571,7 @@ def _empty_stats() -> dict:
     """
     return {
         "hairs": 0,
-        "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0, "pube": 0},
+        "morphologies": {"curve": 0, "loop": 0, "eyelash": 0, "fragment": 0, "pube": 0, "ring": 0},
         "palettes": {},
         "pages_touched": 0,
         "clusters": 0,
@@ -648,6 +710,7 @@ def _morph_kwargs(opts) -> dict:
         eyelash_chance=opts.eyelash_chance,
         fragment_chance=opts.fragment_chance,
         pube_chance=opts.pube_chance,
+        ring_chance=opts.ring_chance,
     )
 
 
@@ -726,6 +789,8 @@ class InjectOptions:
     fragment_chance: float = 0.08
     # Pubic / body-hair morphology — low default so it's a surprise, not a theme.
     pube_chance: float = 0.06
+    # Near-circular coil ("ring") — same low default; another occasional variant.
+    ring_chance: float = 0.06
     # Probability that an already-placed hair gets a "buddy" placed nearby,
     # rolled repeatedly per hair (so a single hair can be the head of a small
     # tuft of 1–3). Real shed hair clumps; even spread looks artificial.
@@ -1470,6 +1535,7 @@ def strand_zip_bytes(
                 eyelash_chance=opts.eyelash_chance,
                 fragment_chance=opts.fragment_chance,
                 pube_chance=opts.pube_chance,
+                ring_chance=opts.ring_chance,
                 cluster_chance=opts.cluster_chance,
                 seed=per_entry_seed,
             )

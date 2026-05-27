@@ -21,9 +21,10 @@ Two front-ends, one rendering engine:
 - Generates each hair as a Bezier curve with 4× supersampling, taper, and
   per-pixel colour jitter — so they read as physical strands rather than
   drawn lines.
-- Five morphologies mixed by default: curved strand, laminated loop with
-  tail, eyelash (short tight curl), fragment (short wispy piece), and the
-  occasional pube (tight zigzag, body-hair vibe).
+- Six morphologies mixed by default: curved strand, laminated loop with
+  tail, eyelash (short tight curl), fragment (short wispy piece), ring (a
+  near-complete, slightly irregular circle), and the occasional pube (tight
+  zigzag, body-hair vibe).
 - ~18% of shed strands carry a tiny dark follicle bulb at one end — the
   "club" root that fell out with the hair. Single most diagnostic "yep,
   that's a real hair" detail.

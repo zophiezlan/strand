@@ -328,9 +328,12 @@ def _generate_kink_hair(rng: random.Random, palette: str = "dark",
     slow_amp = arc_len * rng.uniform(0.10, 0.18)
     slow_phase = rng.uniform(0.0, math.tau)
 
-    # Fast crimp on top.
-    fast_cycles = rng.uniform(5.0, 9.0)
-    fast_amp = arc_len * rng.uniform(0.035, 0.075)
+    # Fast crimp on top — 1-3 kinks. More than that reads as a long zigzag
+    # squiggle rather than a short coiled body hair; a real kinked strand only
+    # turns back on itself a handful of times. Amplitude bumps up a little to
+    # keep each kink legible now that there are fewer of them.
+    fast_cycles = rng.uniform(1.0, 3.0)
+    fast_amp = arc_len * rng.uniform(0.06, 0.11)
     fast_phase = rng.uniform(0.0, math.tau)
 
     n_samples = 280

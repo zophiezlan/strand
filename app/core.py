@@ -329,7 +329,7 @@ def _generate_pube_hair(rng: random.Random, palette: str = "dark",
     slow_phase = rng.uniform(0.0, math.tau)
 
     # Fast crimp on top — 1-3 pubes. More than that reads as a long zigzag
-    # squiggle rather than a short coiled body hair; a real pubeed strand only
+    # squiggle rather than a short coiled body hair; a real pube strand only
     # turns back on itself a handful of times. Amplitude bumps up a little to
     # keep each pube legible now that there are fewer of them.
     fast_cycles = rng.uniform(1.0, 3.0)
